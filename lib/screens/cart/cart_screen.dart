@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
-import '../../core/constants/app_constants.dart';
 import '../../core/utils/formatters.dart';
 import '../../providers/cart_provider.dart';
-import '../../providers/auth_provider.dart';
 import '../../widgets/empty_state.dart';
 import '../../widgets/coupon_selector_modal.dart';
 import '../../widgets/delivery_pincode_calculator.dart';
-import '../auth/login_screen.dart';
+import '../checkout/checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -20,62 +17,11 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
-  void _checkout(CartProvider cart) async {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-
-    if (!auth.isLoggedIn) {
-      final loggedIn = await Navigator.push<bool>(
-        context,
-        MaterialPageRoute(
-          builder: (ctx) => LoginScreen(
-            isFromCheckout: true,
-            onLoginSuccess: () {
-              Navigator.pop(ctx, true);
-            },
-          ),
-        ),
-      );
-
-      if (loggedIn != true) return;
-    }
-
-    if (!mounted) return;
-    _processFinalCheckout(cart, auth);
-  }
-
-  void _processFinalCheckout(CartProvider cart, AuthProvider auth) async {
-    // Build Shopify direct cart permalink: /cart/{variant_id}:{quantity},...
-    final List<String> cartSegments = [];
-    for (final item in cart.items) {
-      final variantId = item.selectedVariant?.id ??
-          (item.product.variants.isNotEmpty ? item.product.variants.first.id : null);
-      if (variantId != null && int.tryParse(variantId) != null) {
-        cartSegments.add('$variantId:${item.quantity}');
-      }
-    }
-
-    String checkoutUrl;
-    if (cartSegments.isNotEmpty) {
-      checkoutUrl = '${AppConstants.storeDomain}/cart/${cartSegments.join(',')}';
-      if (cart.appliedCouponCode != null && cart.appliedCouponCode!.isNotEmpty) {
-        checkoutUrl += '?discount=${Uri.encodeComponent(cart.appliedCouponCode!)}';
-      }
-    } else {
-      checkoutUrl = '${AppConstants.storeDomain}/cart';
-    }
-
-    final Uri url = Uri.parse(checkoutUrl);
-
-    try {
-      final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
-      if (!launched) {
-        await launchUrl(url, mode: LaunchMode.platformDefault);
-      }
-    } catch (_) {
-      try {
-        await launchUrl(url, mode: LaunchMode.inAppBrowserView);
-      } catch (_) {}
-    }
+  void _checkout(CartProvider cart) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CheckoutScreen()),
+    );
   }
 
   @override

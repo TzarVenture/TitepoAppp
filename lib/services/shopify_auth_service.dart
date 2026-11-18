@@ -259,18 +259,26 @@ class ShopifyAuthService {
     try {
       final url = Uri.parse('${AppConstants.storeDomain}/account/login#recover');
       if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
+        await launchUrl(
+          url,
+          mode: LaunchMode.inAppBrowserView,
+          browserConfiguration: const BrowserConfiguration(showTitle: true),
+        );
         return null;
       }
     } catch (_) {}
     return null;
   }
 
-  /// Open official Shopify Customer Accounts portal directly in browser
+  /// Open official Shopify Customer Accounts portal directly in in-app browser
   Future<bool> openShopifyOfficialAccountLogin() async {
     final url = Uri.parse('${AppConstants.storeDomain}/account/login');
     if (await canLaunchUrl(url)) {
-      return await launchUrl(url, mode: LaunchMode.externalApplication);
+      return await launchUrl(
+        url,
+        mode: LaunchMode.inAppBrowserView,
+        browserConfiguration: const BrowserConfiguration(showTitle: true),
+      );
     }
     return false;
   }

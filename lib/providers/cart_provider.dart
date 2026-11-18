@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../models/cart_item.dart';
 import '../models/product.dart';
+import '../models/return_gift_bundle.dart';
 import '../services/storage_service.dart';
 import '../core/constants/app_constants.dart';
 
@@ -107,6 +108,53 @@ class CartProvider with ChangeNotifier {
     }
     _recalculateDiscount();
     await StorageService.saveCart(_items);
+    notifyListeners();
+  }
+
+  /// Add complete Return Gift Bundle (bag + accessories) into cart
+  Future<void> addReturnGiftBundle(ReturnGiftBundle bundle) async {
+    if (bundle.selectedBag == null) return;
+
+    final summaries = <String>[];
+    bundle.selectedItems.forEach((pId, qty) {
+      final acc = bundle.accessoriesMap[pId];
+      if (acc != null) {
+        summaries.add('${acc.title} (x$qty)');
+      }
+    });
+
+    final notes = bundle.isCustomBag
+        ? 'Custom Bag: ${bundle.customDesignNotes.isNotEmpty ? bundle.customDesignNotes : "Uploaded Image"}'
+        : 'Theme Bag: ${bundle.selectedBag!.title}';
+
+    // 1. Add the bag with its total bulk count and custom notes
+    final bagItem = CartItem(
+      product: bundle.selectedBag!,
+      selectedVariant: bundle.selectedBag!.variants.isNotEmpty ? bundle.selectedBag!.variants.first : null,
+      quantity: bundle.numberOfBags,
+      customNotes: '$notes\nIncludes inside each bag: ${summaries.join(", ")}',
+      bundleItemSummaries: summaries,
+    );
+    _items.add(bagItem);
+
+    // 2. Add each accessory multiplied by the number of bags so inventory and pricing sync seamlessly
+    bundle.selectedItems.forEach((pId, qtyPerBag) {
+      final acc = bundle.accessoriesMap[pId];
+      if (acc != null) {
+        final totalQty = qtyPerBag * bundle.numberOfBags;
+        _items.add(
+          CartItem(
+            product: acc,
+            selectedVariant: acc.variants.isNotEmpty ? acc.variants.first : null,
+            quantity: totalQty,
+            customNotes: 'Part of Return Gift Bag (${bundle.selectedBag!.title})',
+          ),
+        );
+      }
+    });
+
+    await StorageService.saveCart(_items);
+    _recalculateDiscount();
     notifyListeners();
   }
 

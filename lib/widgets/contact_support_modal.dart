@@ -68,13 +68,13 @@ class ContactSupportModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Column(
+    return Material(
+      color: Colors.white,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -243,59 +243,65 @@ class ContactSupportModal extends StatelessWidget {
           const SizedBox(height: 10),
 
           // Call option
-          ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: const BorderSide(color: AppColors.borderLight),
-            ),
-            leading: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+          Material(
+            color: Colors.transparent,
+            child: ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: const BorderSide(color: AppColors.borderLight),
               ),
-              child: const Icon(Icons.phone_rounded, color: AppColors.primary, size: 18),
+              leading: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.phone_rounded, color: AppColors.primary, size: 18),
+              ),
+              title: Text(
+                'Call Helpdesk',
+                style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, fontSize: 13.5),
+              ),
+              subtitle: Text(
+                AppConstants.supportPhone,
+                style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.textMuted),
+              ),
+              trailing: const Icon(Icons.call_made_rounded, size: 16, color: AppColors.textMuted),
+              onTap: () => _launchCall(context),
             ),
-            title: Text(
-              'Call Helpdesk',
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, fontSize: 13.5),
-            ),
-            subtitle: Text(
-              AppConstants.supportPhone,
-              style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.textMuted),
-            ),
-            trailing: const Icon(Icons.call_made_rounded, size: 16, color: AppColors.textMuted),
-            onTap: () => _launchCall(context),
           ),
 
           const SizedBox(height: 8),
 
           // Email option
-          ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-              side: const BorderSide(color: AppColors.borderLight),
-            ),
-            leading: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: AppColors.secondary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+          Material(
+            color: Colors.transparent,
+            child: ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: const BorderSide(color: AppColors.borderLight),
               ),
-              child: const Icon(Icons.mail_outline_rounded, color: AppColors.secondary, size: 18),
+              leading: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.secondary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.mail_outline_rounded, color: AppColors.secondary, size: 18),
+              ),
+              title: Text(
+                'Email Support',
+                style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, fontSize: 13.5),
+              ),
+              subtitle: Text(
+                AppConstants.supportEmail,
+                style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.textMuted),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMuted),
+              onTap: () => _launchEmail(context),
             ),
-            title: Text(
-              'Email Support',
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, fontSize: 13.5),
-            ),
-            subtitle: Text(
-              AppConstants.supportEmail,
-              style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.textMuted),
-            ),
-            trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMuted),
-            onTap: () => _launchEmail(context),
           ),
 
           const SizedBox(height: 12),
@@ -325,6 +331,7 @@ class ContactSupportModal extends StatelessWidget {
           const SizedBox(height: 8),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

@@ -77,6 +77,142 @@ class ShopifyService {
     }).toList();
   }
 
+  /// Fetch a single product by handle directly from Shopify
+  Future<ProductModel?> fetchProductByHandle(String handle) async {
+    try {
+      final response = await _client
+          .get(Uri.parse('${AppConstants.storeDomain}/products/$handle.json'))
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['product'] is Map<String, dynamic>) {
+          return ProductModel.fromJson(data['product']);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Fetch the customizable bag product from Shopify
+  Future<ProductModel> fetchCustomBagProduct() async {
+    final customBag = await fetchProductByHandle('titepo-custom-theme-bag');
+    if (customBag != null) return customBag;
+
+    return ProductModel(
+      id: '9357456834775',
+      title: 'Titepo Custom Return Gift Bag',
+      handle: 'titepo-custom-theme-bag',
+      description:
+          'Personalized return gift bag with custom theme design, custom name printing, and uploaded graphics tailored for your special occasion.',
+      vendor: 'TITEPO',
+      productType: 'Custom Bag',
+      price: 250.0,
+      compareAtPrice: 500.0,
+      images: [
+        'https://cdn.shopify.com/s/files/1/0824/4792/5463/files/whitebag-removebg-preview.png?v=1786107156'
+      ],
+      variants: [
+        ProductVariant(id: '49548778209495', title: 'Default Title', price: 250.0, compareAtPrice: 500.0),
+      ],
+      tags: ['custom-bag', 'return-gift'],
+    );
+  }
+
+  /// Fetch ready-made theme bags from Shopify
+  Future<List<ProductModel>> fetchReadyMadeThemeBags() async {
+    final List<String> themeHandles = [
+      'jungle-theme',
+      'animal-theme',
+      'birthday-theme',
+      'princess-theme',
+    ];
+    final List<ProductModel> bags = [];
+
+    for (final handle in themeHandles) {
+      final p = await fetchProductByHandle(handle);
+      if (p != null) {
+        bags.add(p);
+      }
+    }
+
+    if (bags.isNotEmpty) return bags;
+
+    return [
+      ProductModel(
+        id: '9269896118487',
+        title: 'Titepo Jungle Theme (300 GSM)',
+        handle: 'jungle-theme',
+        description: 'Vibrant jungle safari themed high-grade 300 GSM kraft gift bag.',
+        vendor: 'TITEPO',
+        productType: 'Theme Bag',
+        price: 200.0,
+        images: ['https://cdn.shopify.com/s/files/1/0824/4792/5463/files/jungle-theme.webp?v=1779173733'],
+        variants: [ProductVariant(id: '48636095758551', title: 'Default Title', price: 200.0)],
+        tags: ['theme-bag', 'jungle'],
+      ),
+      ProductModel(
+        id: '9269897887959',
+        title: 'Titepo Animal Theme (300 GSM)',
+        handle: 'animal-theme',
+        description: 'Cute zoo animals theme 300 GSM gift bag for kids.',
+        vendor: 'TITEPO',
+        productType: 'Theme Bag',
+        price: 200.0,
+        images: ['https://cdn.shopify.com/s/files/1/0824/4792/5463/files/animal-theme.webp?v=1779173733'],
+        variants: [ProductVariant(id: '48636100000000', title: 'Default Title', price: 200.0)],
+        tags: ['theme-bag', 'animal'],
+      ),
+      ProductModel(
+        id: '9269895987415',
+        title: 'Titepo Birthday Theme (300 GSM)',
+        handle: 'birthday-theme',
+        description: 'Festive birthday party celebration themed bag.',
+        vendor: 'TITEPO',
+        productType: 'Theme Bag',
+        price: 200.0,
+        images: ['https://cdn.shopify.com/s/files/1/0824/4792/5463/files/birthday-theme.webp?v=1779173733'],
+        variants: [ProductVariant(id: '48636111111111', title: 'Default Title', price: 200.0)],
+        tags: ['theme-bag', 'birthday'],
+      ),
+      ProductModel(
+        id: '9269895332055',
+        title: 'Titepo Princess Theme (300 GSM)',
+        handle: 'princess-theme',
+        description: 'Magical fairytale princess castle theme gift bag.',
+        vendor: 'TITEPO',
+        productType: 'Theme Bag',
+        price: 200.0,
+        images: ['https://cdn.shopify.com/s/files/1/0824/4792/5463/files/princess-theme.webp?v=1779173733'],
+        variants: [ProductVariant(id: '48636122222222', title: 'Default Title', price: 200.0)],
+        tags: ['theme-bag', 'princess'],
+      ),
+    ];
+  }
+
+  /// Fetch accessories & gifts for the bag builder
+  Future<List<ProductModel>> fetchReturnGiftAccessories() async {
+    try {
+      final accFuture = fetchProductsByCollection('accessories');
+      final giftFuture = fetchProductsByCollection('return-gift');
+      final results = await Future.wait([accFuture, giftFuture]);
+
+      final Map<String, ProductModel> map = {};
+      for (final list in results) {
+        for (final p in list) {
+          // Exclude bags from accessories list
+          if (!p.handle.contains('theme') && !p.handle.contains('custom-theme-bag')) {
+            map[p.id] = p;
+          }
+        }
+      }
+      if (map.isNotEmpty) {
+        return map.values.toList();
+      }
+    } catch (_) {}
+    return fetchProducts();
+  }
+
   /// Search products by query keyword
   Future<List<ProductModel>> searchProducts(String query) async {
     if (query.trim().isEmpty) return [];
@@ -106,14 +242,14 @@ class ShopifyService {
     }).toList();
   }
 
-  /// Fallback high-quality curated data for Titepo kids store
+  /// Fallback high-quality curated data for Titepo kids store with real Shopify catalog IDs
   List<ProductModel> _getFallbackProducts() {
     return [
       ProductModel(
-        id: '1',
-        title: 'Titepo Waterproof EVA Cute Cartoon School Backpack',
-        handle: 'titepo-waterproof-eva-cartoon-cute-baby-children-backpack-large-silicone-shoulder-kids-school-bag',
-        description: 'Premium lightweight, waterproof EVA silicone backpack designed for school and travel. Features 3D cartoon embossed design, breathable ergonomic shoulder straps, and extra-large compartment space.',
+        id: '9384208695511',
+        title: 'Titepo Shaped Hardshell EVA Shoulder Bagpack Space Theme',
+        handle: 'titepo-shaped-hardshell-eva-shoulder-bagpack-space-theme',
+        description: 'Premium lightweight, waterproof EVA hardshell backpack designed for school and travel. Features 3D space theme embossed design, breathable ergonomic shoulder straps, and spacious compartment.',
         vendor: 'Titepo',
         productType: 'School Bag',
         price: 1499.0,
@@ -123,90 +259,83 @@ class ShopifyService {
           'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=800',
         ],
         variants: [
-          ProductVariant(id: 'v1', title: 'Pink Dino', price: 1499.0, compareAtPrice: 1899.0),
-          ProductVariant(id: 'v2', title: 'Blue Astronaut', price: 1499.0, compareAtPrice: 1899.0),
-          ProductVariant(id: 'v3', title: 'Green Monster', price: 1499.0, compareAtPrice: 1899.0),
+          ProductVariant(id: '49660578136279', title: 'Space Theme EVA', price: 1499.0, compareAtPrice: 1899.0),
         ],
         tags: ['bags', 'school-bag', 'new-arrival', 'return-gift'],
       ),
       ProductModel(
-        id: '2',
-        title: 'Die-Cast Metal Alloy Supercar Toy with Light & Sound',
-        handle: 'die-cast-sport-car-toy-red',
-        description: 'Heavyweight die-cast metal car toy with pull-back function, openable doors, LED headlights, and realistic engine sound effects. 100% child safe & durable alloy construction.',
+        id: '9384369815767',
+        title: 'Titepo 6 Pcs Animal Highlighter Pens Set',
+        handle: 'titepo-6-pcs-animal-highlighter-pens-set-online-return-gift-solution',
+        description: 'Cute pastel animal highlighters set with chisel tips. High quality ink suitable for kids notebooks, coloring and school work.',
         vendor: 'Titepo',
-        productType: 'Toy Car',
-        price: 799.0,
-        compareAtPrice: 999.0,
+        productType: 'Stationery',
+        price: 120.0,
+        compareAtPrice: 240.0,
         images: [
-          'https://images.unsplash.com/photo-1581235720704-06d3acfcb36f?w=800',
-          'https://images.unsplash.com/photo-1594787318286-3d835c1d207f?w=800',
+          'https://cdn.shopify.com/s/files/1/0824/4792/5463/files/1_463658f9-d456-497f-a15e-3ec3de3585f5.jpg?v=1788182655',
         ],
         variants: [
-          ProductVariant(id: 'v4', title: 'Red Racing Ferrari', price: 799.0, compareAtPrice: 999.0),
-          ProductVariant(id: 'v5', title: 'Yellow Lamborghini', price: 799.0, compareAtPrice: 999.0),
+          ProductVariant(id: '49660817834199', title: 'Set of 6 Highlighters', price: 120.0, compareAtPrice: 240.0),
         ],
-        tags: ['cars', 'new-arrival', 'return-gift'],
+        tags: ['stationary', 'new-arrival', 'return-gift'],
       ),
       ProductModel(
-        id: '3',
-        title: 'Insulated Stainless Steel Kids Water Bottle with Straw (500ml)',
-        handle: 'titepo-stainless-steel-kids-water-bottle',
-        description: 'Double-walled vacuum insulated BPA-free stainless steel water bottle. Keeps drinks cold for 12 hours. Spill-proof straw lid and cute silicone protection sleeve.',
-        vendor: 'Titepo',
-        productType: 'Drinkware',
-        price: 649.0,
-        compareAtPrice: 799.0,
-        images: [
-          'https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=800',
-        ],
-        variants: [
-          ProductVariant(id: 'v6', title: 'Purple Bunny 500ml', price: 649.0),
-          ProductVariant(id: 'v7', title: 'Yellow Bear 500ml', price: 649.0),
-        ],
-        tags: ['drinkware', 'water-bottle', 'return-gift'],
-      ),
-      ProductModel(
-        id: '4',
-        title: 'Leak-Proof 3-Compartment Kids Bento Lunch Box',
-        handle: 'titepo-bento-lunch-box',
-        description: 'Food-grade BPA free 3 compartment bento lunch box with chopsticks & spoon included. Easy snap-lock clips for little hands, leakproof silicone seal.',
+        id: '9384208859351',
+        title: 'Titepo 3 Compartment Bento Box for Kids',
+        handle: 'titepo-3-compartment-bento-box-for-kids-online-return-gift-solution',
+        description: 'Food-grade stainless steel 3 compartment bento lunch box with spoon included. Easy snap-lock clips for little hands, leakproof silicone seal.',
         vendor: 'Titepo',
         productType: 'Lunch Box',
-        price: 599.0,
-        compareAtPrice: 749.0,
+        price: 600.0,
+        compareAtPrice: 1200.0,
         images: [
-          'https://images.unsplash.com/photo-1590301157890-4810ed352733?w=800',
+          'https://cdn.shopify.com/s/files/1/0824/4792/5463/files/1_2ef37834-4173-41cb-9b63-c779415958df.jpg?v=1788182522',
         ],
         variants: [
-          ProductVariant(id: 'v8', title: 'Mint Green', price: 599.0),
-          ProductVariant(id: 'v9', title: 'Pastel Pink', price: 599.0),
+          ProductVariant(id: '49660578627799', title: 'Sky Blue Bento Box', price: 600.0, compareAtPrice: 1200.0),
         ],
-        tags: ['lunch-box', 'new-arrival'],
+        tags: ['lunch-box', 'return-gift'],
       ),
       ProductModel(
-        id: '5',
-        title: 'Cute 3D Cartoon Ceramic Mug with Lid & Spoon',
-        handle: 'titepo-cute-cartoon-mug',
-        description: 'Adorable 350ml ceramic coffee and milk mug with silicone coaster, matching lid and stainless steel spoon. Great gift for kids & birthday return gifts.',
+        id: '9384208826583',
+        title: 'Titepo Preschool Backpack Toddler Neoprene Animal - Elephant',
+        handle: 'titepo-preschool-backpack-toddler-neoprene-animal-elephant',
+        description: 'Ultra-lightweight neoprene toddler backpack featuring cute elephant ears, safety leash clip, and padded breathable shoulder straps.',
         vendor: 'Titepo',
-        productType: 'Mug',
-        price: 399.0,
-        compareAtPrice: 499.0,
+        productType: 'School Bag',
+        price: 899.0,
+        compareAtPrice: 1199.0,
         images: [
-          'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=800',
+          'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=800',
         ],
         variants: [
-          ProductVariant(id: 'v10', title: 'Cat Design', price: 399.0),
-          ProductVariant(id: 'v11', title: 'Unicorn Design', price: 399.0),
+          ProductVariant(id: '49660578595031', title: 'Elephant Neoprene', price: 899.0, compareAtPrice: 1199.0),
         ],
-        tags: ['mug', 'return-gift'],
+        tags: ['bags', 'new-arrival'],
       ),
       ProductModel(
-        id: '6',
-        title: '3D Pop-Up Decompression Pencil Case Box',
-        handle: 'titepo-3d-popup-pencil-case',
-        description: 'Multi-functional hard shell 3D pencil box with secret pop-up sharpener, calculator, and ruler slots. High quality EVA material.',
+        id: '9384208793815',
+        title: 'Titepo Cool Wheelie Kids Trolley Backpack',
+        handle: 'titepo-cool-wheelie-kids-backpack',
+        description: 'Multi-functional rolling school trolley backpack with smooth wheels and retractable handle. Relieves spine burden for school going kids.',
+        vendor: 'Titepo',
+        productType: 'School Bag',
+        price: 1299.0,
+        compareAtPrice: 1699.0,
+        images: [
+          'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=800',
+        ],
+        variants: [
+          ProductVariant(id: '49660578562263', title: 'Wheelie Trolley Bag', price: 1299.0, compareAtPrice: 1699.0),
+        ],
+        tags: ['bags', 'return-gift'],
+      ),
+      ProductModel(
+        id: '9384208302295',
+        title: 'Titepo Automatic Electric Pencil Sharpener for Kids',
+        handle: 'titepo-automatic-electric-pencil-sharpener-for-kids',
+        description: 'Battery operated electric pencil sharpener with heavy duty helical steel blade, safety auto-stop mechanism and shavings tray.',
         vendor: 'Titepo',
         productType: 'Stationery',
         price: 499.0,
@@ -215,28 +344,26 @@ class ShopifyService {
           'https://images.unsplash.com/photo-1583485088034-697b5bc54ccd?w=800',
         ],
         variants: [
-          ProductVariant(id: 'v12', title: 'Space Galaxy', price: 499.0),
-          ProductVariant(id: 'v13', title: 'Unicorn Dream', price: 499.0),
+          ProductVariant(id: '49660577743063', title: 'Electric Sharpener', price: 499.0, compareAtPrice: 699.0),
         ],
         tags: ['stationary', 'return-gift', 'new-arrival'],
       ),
       ProductModel(
-        id: '7',
-        title: 'Custom Birthday Return Gift Hamper Box (Pack of 10)',
-        handle: 'titepo-return-gift-hamper-pack',
-        description: 'Complete birthday return gift package for kids party. Includes custom themed pouch, activity stationery set, mini car, and cute keychain ready in gift box packaging.',
+        id: '9384208466135',
+        title: 'Titepo Chisel Tip Colouring Pens Set - 6 Pcs',
+        handle: 'titepo-chisel-tip-colouring-pens-set-6-pcs',
+        description: 'Vibrant chisel tip colouring pens designed for young artists. Non-toxic washable inks, perfect for return gifts and party hampers.',
         vendor: 'Titepo',
-        productType: 'Return Gift Package',
-        price: 2499.0,
-        compareAtPrice: 2999.0,
+        productType: 'Stationery',
+        price: 199.0,
+        compareAtPrice: 299.0,
         images: [
           'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=800',
         ],
         variants: [
-          ProductVariant(id: 'v14', title: 'Pack of 10 Hampers', price: 2499.0),
-          ProductVariant(id: 'v15', title: 'Pack of 20 Hampers', price: 4799.0),
+          ProductVariant(id: '49660577906903', title: '6 Pcs Set', price: 199.0, compareAtPrice: 299.0),
         ],
-        tags: ['return-gift', 'featured'],
+        tags: ['stationary', 'return-gift', 'featured'],
       ),
     ];
   }

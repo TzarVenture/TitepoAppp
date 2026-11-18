@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/product.dart';
@@ -9,15 +10,16 @@ import '../../widgets/product_card.dart';
 import '../../widgets/marquee_banner.dart';
 import '../../widgets/trust_badge_row.dart';
 import '../../widgets/skeleton_loader.dart';
-import '../../widgets/return_gift_modal.dart';
 import '../../widgets/animated_category_rails.dart';
 import '../../widgets/video_reels_preview_section.dart';
 import '../../widgets/product_slider_section.dart';
 import '../../widgets/promo_banner_card.dart';
 import '../../widgets/age_filter_rails.dart';
+import '../../widgets/titepo_brand_logo.dart';
+import '../../widgets/animated_search_hint.dart';
 import '../cart/cart_screen.dart';
-import '../search/search_screen.dart';
 import '../categories/categories_screen.dart';
+import '../return_gift/return_gift_solutions_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,10 +30,17 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final PageController _heroController = PageController();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
+
   int _heroIndex = 0;
   Timer? _heroAutoPlayTimer;
   String _activeCategoryFilter = 'all';
   String _activeAgeFilter = 'all';
+  String _searchQuery = '';
+  String _searchSort = 'featured';
+  bool _isSearchFocused = false;
 
   final List<Map<String, dynamic>> _heroBanners = [
     {
@@ -69,6 +78,15 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _startHeroAutoPlay();
+    _searchFocusNode.addListener(_onSearchFocusChanged);
+  }
+
+  void _onSearchFocusChanged() {
+    if (mounted) {
+      setState(() {
+        _isSearchFocused = _searchFocusNode.hasFocus;
+      });
+    }
   }
 
   void _startHeroAutoPlay() {
@@ -89,16 +107,18 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _heroAutoPlayTimer?.cancel();
     _heroController.dispose();
+    _searchFocusNode.removeListener(_onSearchFocusChanged);
+    _searchFocusNode.dispose();
+    _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   void _onHeroAction(Map<String, dynamic> item) {
-    if (item['action'] == 'modal') {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => const ReturnGiftModal(),
+    if (item['action'] == 'modal' || item['category'] == 'return-gift') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ReturnGiftSolutionsScreen()),
       );
     } else if (item['action'] == 'category' && item['category'] != null) {
       final shopify = Provider.of<ShopifyProvider>(context, listen: false);
@@ -116,9 +136,31 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<ProductModel> _filterProducts(List<ProductModel> products) {
-    if (_activeAgeFilter == 'all') return products;
+    var result = products;
 
-    return products.where((p) {
+    // 1. Search Query Filter (Real-time live filtering on Home Screen)
+    if (_searchQuery.isNotEmpty) {
+      final q = _searchQuery.toLowerCase();
+      result = result.where((p) {
+        final title = p.title.toLowerCase();
+        final desc = p.description.toLowerCase();
+        final type = p.productType.toLowerCase();
+        final vendor = p.vendor.toLowerCase();
+        final tags = p.tags.join(' ').toLowerCase();
+        return title.contains(q) || desc.contains(q) || type.contains(q) || vendor.contains(q) || tags.contains(q);
+      }).toList();
+
+      if (_searchSort == 'price_low') {
+        result.sort((a, b) => a.price.compareTo(b.price));
+      } else if (_searchSort == 'price_high') {
+        result.sort((a, b) => b.price.compareTo(a.price));
+      }
+      return result;
+    }
+
+    if (_activeAgeFilter == 'all') return result;
+
+    return result.where((p) {
       final combined = '${p.tags.join(' ')} ${p.title} ${p.description}'.toLowerCase();
       if (_activeAgeFilter == '0-2') {
         return combined.contains('toddler') ||
@@ -151,131 +193,175 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final shopifyProvider = Provider.of<ShopifyProvider>(context);
-    final rawDisplayed = _activeCategoryFilter == 'all'
+    final rawDisplayed = _searchQuery.isNotEmpty
         ? shopifyProvider.allProducts
-        : shopifyProvider.categoryProducts;
+        : (_activeCategoryFilter == 'all'
+            ? shopifyProvider.allProducts
+            : shopifyProvider.categoryProducts);
     final displayedProducts = _filterProducts(rawDisplayed);
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(68),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.primary,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.08),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+    return PopScope(
+      canPop: _searchQuery.isEmpty && !_searchFocusNode.hasFocus,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_searchFocusNode.hasFocus) {
+          _searchFocusNode.unfocus();
+        }
+        if (_searchQuery.isNotEmpty) {
+          setState(() {
+            _searchController.clear();
+            _searchQuery = '';
+          });
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: PreferredSize(
+          preferredSize: const Size.fromHeight(66),
+          child: AnnotatedRegion<SystemUiOverlayStyle>(
+            value: const SystemUiOverlayStyle(
+              statusBarColor: Colors.transparent,
+              statusBarIconBrightness: Brightness.dark,
+              statusBarBrightness: Brightness.light,
+            ),
+            child: Container(
+              decoration: const BoxDecoration(
+                color: AppColors.background,
+                border: Border(
+                  bottom: BorderSide(
+                    color: AppColors.borderLight,
+                    width: 1.0,
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x08000000),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  // Brand Icon & Title
-                  Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: const BoxDecoration(
-                      color: AppColors.accentYellow,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.card_giftcard_rounded,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
                     children: [
-                      Text(
-                        'TITEPO',
-                        style: TextStyle(
+                      // Official Brand Logo matching the website (replaces the basket icon & text)
+                      const TitepoBrandLogo(
+                        height: 34,
+                      ),
+                      const Spacer(),
+
+                      // Search Quick Button
+                      Container(
+                        decoration: BoxDecoration(
                           color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 20,
-                          letterSpacing: 1.4,
-                          height: 1.1,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.borderLight, width: 1.0),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.03),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                         ),
-                      ),
-                      Text(
-                        'KIDS TOYS & RETURN GIFTS',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: AppColors.accentYellow,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-
-                  // Search Quick Button
-                  IconButton(
-                    icon: const Icon(Icons.search_rounded, color: Colors.white, size: 24),
-                    tooltip: 'Search Products',
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SearchScreen()),
-                      );
-                    },
-                  ),
-
-                  // Cart Icon with live badge
-                  Consumer<CartProvider>(
-                    builder: (context, cart, _) {
-                      return Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.shopping_bag_outlined, color: Colors.white, size: 24),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const CartScreen()),
-                              );
-                            },
+                        child: IconButton(
+                          icon: Icon(
+                            _searchQuery.isNotEmpty ? Icons.close_rounded : Icons.search_rounded,
+                            color: AppColors.primary,
+                            size: 22,
                           ),
-                          if (cart.totalItemCount > 0)
-                            Positioned(
-                              right: 6,
-                              top: 6,
-                              child: AnimatedScale(
-                                scale: 1.0,
-                                duration: const Duration(milliseconds: 250),
-                                child: Container(
-                                  padding: const EdgeInsets.all(3.5),
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.saleRed,
-                                    shape: BoxShape.circle,
+                          tooltip: _searchQuery.isNotEmpty ? 'Clear Search' : 'Search on Home Screen',
+                          padding: const EdgeInsets.all(8),
+                          constraints: const BoxConstraints(),
+                          onPressed: () {
+                            if (_searchQuery.isNotEmpty) {
+                              setState(() {
+                                _searchController.clear();
+                                _searchQuery = '';
+                              });
+                              _searchFocusNode.unfocus();
+                            } else {
+                              if (_scrollController.hasClients) {
+                                _scrollController.animateTo(
+                                  0,
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeOut,
+                                );
+                              }
+                              _searchFocusNode.requestFocus();
+                            }
+                          },
+                        ),
+                      ),
+                    const SizedBox(width: 8),
+
+                    // Cart Icon with live badge
+                    Consumer<CartProvider>(
+                      builder: (context, cart, _) {
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: AppColors.borderLight, width: 1.0),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.03),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
                                   ),
-                                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                                  child: Text(
-                                    '${cart.totalItemCount}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.bold,
+                                ],
+                              ),
+                              child: IconButton(
+                                icon: const Icon(Icons.shopping_bag_outlined, color: AppColors.primary, size: 22),
+                                tooltip: 'Cart',
+                                padding: const EdgeInsets.all(8),
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const CartScreen()),
+                                  );
+                                },
+                              ),
+                            ),
+                            if (cart.totalItemCount > 0)
+                              Positioned(
+                                right: -3,
+                                top: -3,
+                                child: AnimatedScale(
+                                  scale: 1.0,
+                                  duration: const Duration(milliseconds: 250),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.saleRed,
+                                      shape: BoxShape.circle,
                                     ),
-                                    textAlign: TextAlign.center,
+                                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                                    child: Text(
+                                      '${cart.totalItemCount}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                ],
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -288,6 +374,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: (shopifyProvider.isLoading && shopifyProvider.allProducts.isEmpty)
             ? const SkeletonLoader.homeScreen()
             : SingleChildScrollView(
+                controller: _scrollController,
                 physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -295,58 +382,168 @@ class _HomeScreenState extends State<HomeScreen> {
                     // Top Announcement Marquee Bar
                     const MarqueeBanner(),
 
-                    // Search Bar Quick Trigger
+                    // Interactive In-Place Search Bar
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                      child: InkWell(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const SearchScreen()),
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          height: 44,
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: AppColors.borderLight, width: 1.2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.02),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                      child: Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: _isSearchFocused ? AppColors.primary : AppColors.borderLight,
+                            width: _isSearchFocused ? 1.5 : 1.0,
                           ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.search_rounded, color: AppColors.textMuted, size: 20),
-                              SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  'Search toys, return gifts, bags, cars...',
-                                  style: TextStyle(
-                                    color: AppColors.textMuted,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
+                          boxShadow: [
+                            BoxShadow(
+                              color: _isSearchFocused
+                                  ? AppColors.primary.withValues(alpha: 0.08)
+                                  : Colors.black.withValues(alpha: 0.02),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(width: 14),
+                            Icon(
+                              Icons.search_rounded,
+                              color: _isSearchFocused ? AppColors.primary : AppColors.textMuted,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Stack(
+                                alignment: Alignment.centerLeft,
+                                children: [
+                                  // Animated rotating placeholder text that changes automatically
+                                  if (_searchQuery.isEmpty)
+                                    const IgnorePointer(
+                                      child: AnimatedSearchHint(
+                                        prefix: 'Search ',
+                                        hints: [
+                                          '"Birthday Return Gifts"... 🎁',
+                                          '"Custom Name & Photo Bags"... 🎒',
+                                          '"Die-Cast Alloy Super Cars"... 🏎️',
+                                          '"School Water Bottles"... 💧',
+                                          '"Insulated Bento Lunch Boxes"... 🍱',
+                                          '"Kids Puzzles & Activity Sets"... 🧩',
+                                        ],
+                                        style: TextStyle(
+                                          color: Color(0xFF8C939D),
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      ),
+                                    ),
+
+                                  // Active input field with all internal borders stripped
+                                  TextField(
+                                    controller: _searchController,
+                                    focusNode: _searchFocusNode,
+                                    textInputAction: TextInputAction.search,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      disabledBorder: InputBorder.none,
+                                      errorBorder: InputBorder.none,
+                                      filled: false,
+                                      fillColor: Colors.transparent,
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(vertical: 12),
+                                    ),
+                                    onChanged: (val) {
+                                      setState(() {
+                                        _searchQuery = val.trim();
+                                      });
+                                    },
+                                    onSubmitted: (_) => _searchFocusNode.unfocus(),
                                   ),
-                                ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                            if (_searchQuery.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.cancel_rounded, color: AppColors.textMuted, size: 20),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                tooltip: 'Clear Search',
+                                onPressed: () {
+                                  setState(() {
+                                    _searchController.clear();
+                                    _searchQuery = '';
+                                  });
+                                },
+                              )
+                            else
+                              IconButton(
+                                icon: const Icon(Icons.tune_rounded, color: AppColors.textMuted, size: 20),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                tooltip: 'All Categories',
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const CategoriesScreen()),
+                                  );
+                                },
+                              ),
+                            const SizedBox(width: 6),
+                          ],
                         ),
                       ),
                     ),
 
-                    const SizedBox(height: 10),
+                    // Quick Search Suggestion Chips when search bar is focused and empty
+                    if (_isSearchFocused && _searchQuery.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          physics: const BouncingScrollPhysics(),
+                          child: Row(
+                            children: [
+                              const Text(
+                                'Popular: ',
+                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.textMuted),
+                              ),
+                              for (final term in ['Return Gifts', 'Bags', 'Cars', 'Water Bottles', 'Lunch Box', 'Puzzles'])
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 6),
+                                  child: ActionChip(
+                                    label: Text(term),
+                                    labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.primary),
+                                    backgroundColor: Colors.white,
+                                    side: const BorderSide(color: AppColors.borderLight),
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                                    onPressed: () {
+                                      _searchController.text = term;
+                                      setState(() => _searchQuery = term);
+                                    },
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
 
-                    // 1. Hero Banner Carousel with smooth animations
-                    SizedBox(
-                      height: 195,
-                      child: PageView.builder(
+                    if (_searchQuery.isNotEmpty) ...[
+                      // In-Place Search Results View directly on Home Screen
+                      _buildHomeScreenSearchResults(shopifyProvider, displayedProducts),
+                    ] else ...[
+                      const SizedBox(height: 10),
+
+                      // 1. Hero Banner Carousel with smooth animations
+                      SizedBox(
+                        height: 195,
+                        child: PageView.builder(
                         controller: _heroController,
                         onPageChanged: (idx) => setState(() => _heroIndex = idx),
                         itemCount: _heroBanners.length,
@@ -493,6 +690,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     AnimatedCategoryRails(
                       activeCategory: _activeCategoryFilter,
                       onSelectCategory: (handle) {
+                        if (handle == 'return-gift') {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ReturnGiftSolutionsScreen()),
+                          );
+                          return;
+                        }
                         setState(() => _activeCategoryFilter = handle);
                         shopifyProvider.selectCategory(handle);
                         Navigator.push(
@@ -572,15 +776,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const SizedBox(height: 12),
                                 ElevatedButton.icon(
                                   onPressed: () {
-                                    showModalBottomSheet(
-                                      context: context,
-                                      isScrollControlled: true,
-                                      backgroundColor: Colors.transparent,
-                                      builder: (_) => const ReturnGiftModal(),
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => const ReturnGiftSolutionsScreen()),
                                     );
                                   },
-                                  icon: const Icon(Icons.send_rounded, size: 14),
-                                  label: const Text('Request Custom Hampers'),
+                                  icon: const Icon(Icons.arrow_forward_rounded, size: 14),
+                                  label: const Text('Design Return Gift Bags'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppColors.accentYellow,
                                     foregroundColor: AppColors.textPrimary,
@@ -852,8 +1054,244 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 32),
                   ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+  }
+
+  /// In-Place Search Results View rendered directly on the Home Screen
+  Widget _buildHomeScreenSearchResults(ShopifyProvider shopifyProvider, List<ProductModel> products) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 6),
+
+          // Search Header Summary & Sort Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.borderLight, width: 1.0),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.search_rounded, size: 16, color: AppColors.primary),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Results for "$_searchQuery"',
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${products.length} product${products.length == 1 ? '' : 's'} matching',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Sort Dropdown
+                PopupMenuButton<String>(
+                  initialValue: _searchSort,
+                  tooltip: 'Sort Results',
+                  onSelected: (val) {
+                    setState(() => _searchSort = val);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.background,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.borderLight, width: 1.0),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.swap_vert_rounded, size: 15, color: AppColors.primary),
+                        const SizedBox(width: 4),
+                        Text(
+                          _searchSort == 'price_low'
+                              ? 'Price: Low'
+                              : _searchSort == 'price_high'
+                                  ? 'Price: High'
+                                  : 'Featured',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'featured', child: Text('Featured / Relevant')),
+                    PopupMenuItem(value: 'price_low', child: Text('Price: Low to High')),
+                    PopupMenuItem(value: 'price_high', child: Text('Price: High to Low')),
+                  ],
+                ),
+
+                const SizedBox(width: 8),
+
+                // Clear Search Chip Button
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _searchController.clear();
+                      _searchQuery = '';
+                    });
+                    _searchFocusNode.unfocus();
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.saleRed.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Clear',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.saleRed,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Search Results Product Grid or Empty State
+          if (shopifyProvider.isLoading)
+            const SkeletonLoader()
+          else if (products.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: const BoxDecoration(
+                        color: AppColors.accentYellowLight,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.search_off_rounded, size: 34, color: AppColors.primary),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No toys found for "$_searchQuery"',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Try another search term or browse popular categories below:',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      alignment: WrapAlignment.center,
+                      children: [
+                        for (final tag in ['Bags', 'Cars', 'Bottles', 'Return Gift', 'Puzzles', 'Lunch Box'])
+                          ActionChip(
+                            label: Text(tag),
+                            labelStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: AppColors.primary),
+                            backgroundColor: Colors.white,
+                            side: const BorderSide(color: AppColors.borderLight),
+                            onPressed: () {
+                              _searchController.text = tag;
+                              setState(() => _searchQuery = tag);
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        });
+                        _searchFocusNode.unfocus();
+                      },
+                      icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                      label: const Text('Back to Full Home Screen'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            )
+          else
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 0.52,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 14,
+              ),
+              itemCount: products.length,
+              itemBuilder: (context, index) {
+                final product = products[index];
+                return ProductCard(product: product);
+              },
+            ),
+
+          const SizedBox(height: 32),
+        ],
       ),
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../widgets/titepo_brand_logo.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -19,24 +20,18 @@ class AboutScreen extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: Image.asset(
+                      'assets/images/app_logo.png',
+                      width: 90,
+                      height: 90,
+                      fit: BoxFit.cover,
                     ),
-                    child: const Icon(Icons.card_giftcard, color: AppColors.accentYellow, size: 50),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'TITEPO',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.primary,
-                      letterSpacing: 2,
-                    ),
-                  ),
+                  const TitepoBrandLogo(height: 36),
+                  const SizedBox(height: 8),
                   const Text(
                     AppConstants.appTagline,
                     style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: AppColors.textSecondary),

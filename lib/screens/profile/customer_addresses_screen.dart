@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../models/customer_address.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/storage_service.dart';
 
 class CustomerAddressesScreen extends StatefulWidget {
@@ -24,33 +26,24 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
 
   Future<void> _loadAddresses() async {
     final rawList = await StorageService.loadAddresses();
-    if (rawList.isEmpty) {
-      // Provide default sample address for quick start
-      final defaultAddr = [
-        const CustomerAddress(
-          id: 'addr_default_1',
-          name: 'Pooja Sharma',
-          phone: '9876543210',
-          pincode: '560038',
-          flatHouse: 'Flat 402, Sunshine Heights',
-          areaStreet: '12th Main, HAL 2nd Stage, Indiranagar',
-          landmark: 'Opp. Sony Center',
-          city: 'Bengaluru',
-          state: 'Karnataka',
-          type: 'Home',
-          isDefault: true,
-        ),
-      ];
-      _addresses = defaultAddr;
+    final parsed = rawList
+        .map((str) {
+          try {
+            return CustomerAddress.fromJson(jsonDecode(str));
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<CustomerAddress>()
+        // Strictly purge any legacy mock/dummy addresses
+        .where((a) => a.id != 'addr_default_1' && a.name != 'Pooja Sharma')
+        .toList();
+
+    _addresses = parsed;
+
+    // Overwrite storage if legacy mock address was purged
+    if (rawList.isNotEmpty && _addresses.length != rawList.length) {
       await _persistAddresses();
-    } else {
-      _addresses = rawList.map((str) {
-        try {
-          return CustomerAddress.fromJson(jsonDecode(str));
-        } catch (_) {
-          return null;
-        }
-      }).whereType<CustomerAddress>().toList();
     }
 
     if (mounted) {
@@ -114,12 +107,34 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
   }
 
   void _openAddressForm({CustomerAddress? existingAddress}) {
+    CustomerAddress? initial = existingAddress;
+    if (initial == null) {
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      final user = auth.currentUser;
+      if (user != null && user.name.isNotEmpty) {
+        initial = CustomerAddress(
+          id: '',
+          name: user.name,
+          phone: user.phone,
+          pincode: '',
+          flatHouse: '',
+          areaStreet: '',
+          landmark: '',
+          city: '',
+          state: '',
+          type: 'Home',
+          isDefault: _addresses.isEmpty,
+        );
+      }
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _AddressFormSheet(
-        existingAddress: existingAddress,
+        existingAddress: initial,
+        isEditing: existingAddress != null,
         onSave: (savedAddress) {
           setState(() {
             if (existingAddress != null) {
@@ -368,10 +383,12 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
 
 class _AddressFormSheet extends StatefulWidget {
   final CustomerAddress? existingAddress;
+  final bool isEditing;
   final ValueChanged<CustomerAddress> onSave;
 
   const _AddressFormSheet({
     this.existingAddress,
+    this.isEditing = false,
     required this.onSave,
   });
 
@@ -426,7 +443,9 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
     if (!_formKey.currentState!.validate()) return;
 
     final result = CustomerAddress(
-      id: widget.existingAddress?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+      id: (widget.isEditing && widget.existingAddress?.id.isNotEmpty == true)
+          ? widget.existingAddress!.id
+          : DateTime.now().millisecondsSinceEpoch.toString(),
       name: _nameController.text.trim(),
       phone: _phoneController.text.trim(),
       pincode: _pincodeController.text.trim(),
@@ -478,7 +497,7 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    widget.existingAddress != null ? 'Edit Address' : 'Add New Address',
+                    widget.isEditing ? 'Edit Address' : 'Add New Address',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/cart_item.dart';
+import '../models/order.dart';
 import '../models/product.dart';
 
 class StorageService {
@@ -9,6 +10,48 @@ class StorageService {
   static const String _searchHistoryKey = 'titepo_search_history_v1';
   static const String _customerAddressesKey = 'titepo_customer_addresses_v1';
   static const String _notificationsKey = 'titepo_notification_prefs_v1';
+  static const String _ordersKey = 'titepo_orders_v1';
+
+  /// Save customer orders
+  static Future<void> saveOrders(List<OrderModel> orders) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final List<String> jsonList =
+          orders.map((o) => jsonEncode(o.toJson())).toList();
+      await prefs.setStringList(_ordersKey, jsonList);
+    } catch (_) {}
+  }
+
+  /// Load customer orders (purging any legacy mock entries)
+  static Future<List<OrderModel>> loadOrders() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final List<String>? jsonList = prefs.getStringList(_ordersKey);
+      if (jsonList == null || jsonList.isEmpty) return [];
+
+      return jsonList
+          .map((str) {
+            try {
+              return OrderModel.fromJson(jsonDecode(str));
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<OrderModel>()
+          .where((o) => o.orderId != 'TP-98231' && o.orderId != 'TP-98104')
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Add or update a customer order
+  static Future<void> addOrder(OrderModel newOrder) async {
+    final current = await loadOrders();
+    current.removeWhere((o) => o.orderId == newOrder.orderId);
+    current.insert(0, newOrder);
+    await saveOrders(current);
+  }
 
   /// Save notification preferences
   static Future<void> saveNotificationPreferences(Map<String, bool> prefsMap) async {

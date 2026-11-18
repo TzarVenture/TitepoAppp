@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../core/constants/app_colors.dart';
-import '../core/constants/app_constants.dart';
 import '../core/utils/formatters.dart';
 import '../providers/cart_provider.dart';
-import '../providers/auth_provider.dart';
-import '../screens/auth/login_screen.dart';
 import '../screens/cart/cart_screen.dart';
+import '../screens/checkout/checkout_screen.dart';
 import 'coupon_selector_modal.dart';
 
 class CartDrawerModal extends StatelessWidget {
@@ -23,48 +20,12 @@ class CartDrawerModal extends StatelessWidget {
     );
   }
 
-  void _checkout(BuildContext context, CartProvider cart) async {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-
-    if (!auth.isLoggedIn) {
-      final loggedIn = await Navigator.push<bool>(
-        context,
-        MaterialPageRoute(
-          builder: (ctx) => LoginScreen(
-            isFromCheckout: true,
-            onLoginSuccess: () => Navigator.pop(ctx, true),
-          ),
-        ),
-      );
-      if (loggedIn != true) return;
-    }
-
-    // Direct cart permalink to Shopify
-    final List<String> cartSegments = [];
-    for (final item in cart.items) {
-      final variantId = item.selectedVariant?.id ??
-          (item.product.variants.isNotEmpty ? item.product.variants.first.id : null);
-      if (variantId != null && int.tryParse(variantId) != null) {
-        cartSegments.add('$variantId:${item.quantity}');
-      }
-    }
-
-    String checkoutUrl;
-    if (cartSegments.isNotEmpty) {
-      checkoutUrl = '${AppConstants.storeDomain}/cart/${cartSegments.join(',')}';
-      if (cart.appliedCouponCode != null && cart.appliedCouponCode!.isNotEmpty) {
-        checkoutUrl += '?discount=${Uri.encodeComponent(cart.appliedCouponCode!)}';
-      }
-    } else {
-      checkoutUrl = '${AppConstants.storeDomain}/cart';
-    }
-
-    final Uri url = Uri.parse(checkoutUrl);
-    try {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } catch (_) {
-      await launchUrl(url, mode: LaunchMode.platformDefault);
-    }
+  void _checkout(BuildContext context, CartProvider cart) {
+    Navigator.pop(context); // close cart drawer modal
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CheckoutScreen()),
+    );
   }
 
   @override
