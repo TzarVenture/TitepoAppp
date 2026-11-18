@@ -10,7 +10,8 @@ class StorageService {
   static const String _searchHistoryKey = 'titepo_search_history_v1';
   static const String _customerAddressesKey = 'titepo_customer_addresses_v1';
   static const String _notificationsKey = 'titepo_notification_prefs_v1';
-  static const String _ordersKey = 'titepo_orders_v1';
+  static const String _ordersKey = 'titepo_orders_v2';
+  static const String _cachedProductsKey = 'titepo_cached_catalog_v1';
 
   /// Save customer orders
   static Future<void> saveOrders(List<OrderModel> orders) async {
@@ -43,6 +44,28 @@ class StorageService {
     } catch (_) {
       return [];
     }
+  }
+
+  static const String _couponKey = 'titepo_applied_coupon_v2';
+
+  static Future<String?> loadAppliedCoupon() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_couponKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> saveAppliedCoupon(String? code) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (code == null) {
+        await prefs.remove(_couponKey);
+      } else {
+        await prefs.setString(_couponKey, code);
+      }
+    } catch (_) {}
   }
 
   /// Add or update a customer order
@@ -168,6 +191,38 @@ class StorageService {
           .map((itemStr) => ProductModel.fromJson(jsonDecode(itemStr)))
           .toList();
     } catch (e) {
+      return [];
+    }
+  }
+
+  /// Cache live products for offline resilience
+  static Future<void> cacheProducts(List<ProductModel> products) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final List<String> jsonList =
+          products.take(300).map((p) => jsonEncode(p.toJson())).toList();
+      await prefs.setStringList(_cachedProductsKey, jsonList);
+    } catch (_) {}
+  }
+
+  /// Load cached live products
+  static Future<List<ProductModel>> getCachedProducts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final List<String>? jsonList = prefs.getStringList(_cachedProductsKey);
+      if (jsonList == null || jsonList.isEmpty) return [];
+
+      return jsonList
+          .map((itemStr) {
+            try {
+              return ProductModel.fromJson(jsonDecode(itemStr));
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<ProductModel>()
+          .toList();
+    } catch (_) {
       return [];
     }
   }

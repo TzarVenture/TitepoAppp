@@ -1,327 +1,156 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/constants/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/order.dart';
+import '../../widgets/ui_kit.dart';
 import '../main_navigation.dart';
-import '../orders/order_tracking_screen.dart';
+import '../web/store_web_screen.dart';
 
 class OrderSuccessScreen extends StatelessWidget {
   final OrderModel order;
-
   const OrderSuccessScreen({super.key, required this.order});
+
+  Future<void> _shareArtwork() async {
+    final text = 'Hi Titepo team! I just placed order ${order.orderId} for custom return gift bags. '
+        'Sharing my artwork/design here.';
+    await launchUrl(
+      Uri.parse('${AppConstants.supportWhatsApp}?text=${Uri.encodeComponent(text)}'),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
+  void _goHome(BuildContext context) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MainNavigation()),
+      (_) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) {
-          Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => const MainNavigation(initialIndex: 0)),
-            (route) => false,
-          );
-        }
+        if (!didPop) _goHome(context);
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFF9F6F0),
-        appBar: AppBar(
-          backgroundColor: const Color(0xFFF9F6F0),
-          elevation: 0,
-          automaticallyImplyLeading: false,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.close_rounded, color: AppColors.textPrimary),
-              onPressed: () {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MainNavigation(initialIndex: 0)),
-                  (route) => false,
-                );
-              },
-            ),
-            const SizedBox(width: 8),
-          ],
-        ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 32, 20, 24),
             children: [
-              // 1. Success Celebration Icon
-              Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
+              Center(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.4, end: 1),
+                  duration: const Duration(milliseconds: 650),
+                  curve: Curves.elasticOut,
+                  builder: (_, v, child) => Transform.scale(scale: v, child: child),
                   child: Container(
-                    width: 68,
-                    height: 68,
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.check_rounded,
-                      color: Colors.white,
-                      size: 42,
-                    ),
+                    width: 108,
+                    height: 108,
+                    decoration: const BoxDecoration(color: AppColors.primarySoft, shape: BoxShape.circle),
+                    child: const Icon(Icons.check_rounded, size: 64, color: AppColors.primary),
                   ),
                 ),
               ),
-
-              const SizedBox(height: 18),
-
-              Text(
-                'Order Placed Successfully! 🎉',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.textPrimary,
-                  letterSpacing: -0.5,
-                ),
-              ),
-
+              const SizedBox(height: 20),
+              Text('Order placed!', textAlign: TextAlign.center, style: AppTheme.display(size: 30, weight: FontWeight.w800)),
               const SizedBox(height: 6),
-
               Text(
-                'Thank you for shopping with Titepo! Your kid-safe gift order is confirmed and being prepared.',
+                order.email != null
+                    ? 'A confirmation has been sent to ${order.email}.'
+                    : 'Shopify has sent your order confirmation by email/SMS.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                  height: 1.45,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-
-              const SizedBox(height: 22),
-
-              // 2. Order Confirmation Card
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.borderLight, width: 1.2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Order ID',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            color: AppColors.textMuted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.accentYellowLight,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: AppColors.accentYellow.withValues(alpha: 0.6)),
-                          ),
-                          child: Text(
-                            '#${order.orderId}',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w900,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 22),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Estimated Delivery',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            color: AppColors.textMuted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          order.estimatedDelivery,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF16A34A),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Payment Method',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            color: AppColors.textMuted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          order.paymentMethod,
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Total Paid',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 13,
-                            color: AppColors.textMuted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        Text(
-                          Formatters.formatPrice(order.totalAmount),
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // 3. Shipping Address Summary
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.borderLight),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on_outlined, color: AppColors.primary, size: 18),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Delivery Destination',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13.5,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      order.shippingAddress,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12.5,
-                        color: AppColors.textSecondary,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
               const SizedBox(height: 24),
-
-              // 4. Action Buttons
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => OrderTrackingScreen(order: order),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    children: [
+                      _kv('Order', order.orderId, bold: true),
+                      _kv('Date', Formatters.formatDate(order.orderDate)),
+                      _kv('Items', '${order.itemCount}'),
+                      _kv('Total paid', Formatters.formatPrice(order.totalAmount), bold: true),
+                      if (order.discountCode != null) _kv('Discount code', order.discountCode!),
+                    ],
+                  ),
+                ),
+              ),
+              if (order.hasCustomBag) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentYellowLight,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('One more step for your custom bags',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+                      const SizedBox(height: 4),
+                      const Text('Send us your artwork on WhatsApp so we can print it on your bags.',
+                          style: TextStyle(fontSize: 13)),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        style: FilledButton.styleFrom(backgroundColor: const Color(0xFF25D366)),
+                        onPressed: _shareArtwork,
+                        icon: const Icon(Icons.chat_rounded),
+                        label: const Text('Share artwork on WhatsApp'),
                       ),
-                    );
-                  },
-                  icon: const Icon(Icons.radar_rounded, size: 18),
-                  label: Text(
-                    'Track Order',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ],
                   ),
                 ),
-              ),
-
-              const SizedBox(height: 12),
-
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () {
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(builder: (_) => const MainNavigation(initialIndex: 0)),
-                      (route) => false,
-                    );
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary, width: 1.2),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: Text(
-                    'Continue Shopping',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
+              ],
+              const SizedBox(height: 14),
+              ...order.items.take(4).map((i) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: SizedBox(width: 52, height: 52, child: AppNetworkImage(url: i.image, width: 160)),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(i.product.displayTitle,
+                              maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        ),
+                        Text('×${i.quantity}', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      ],
                     ),
-                  ),
+                  )),
+              if (order.items.length > 4)
+                Text('+ ${order.items.length - 4} more items', style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 20),
+              if (order.statusUrl != null)
+                OutlinedButton.icon(
+                  onPressed: () => StoreWebScreen.open(context, order.statusUrl!, 'Order ${order.orderId}'),
+                  icon: const Icon(Icons.local_shipping_outlined),
+                  label: const Text('View order status'),
                 ),
-              ),
-
-              const SizedBox(height: 32),
+              const SizedBox(height: 10),
+              FilledButton(onPressed: () => _goHome(context), child: const Text('Continue shopping')),
             ],
           ),
         ),
       ),
     );
   }
+
+  Widget _kv(String k, String v, {bool bold = false}) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            Text(k, style: const TextStyle(color: AppColors.textSecondary)),
+            const Spacer(),
+            Text(v, style: TextStyle(fontWeight: bold ? FontWeight.w800 : FontWeight.w600, fontSize: bold ? 15.5 : 14)),
+          ],
+        ),
+      );
 }

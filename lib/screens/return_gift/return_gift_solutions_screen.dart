@@ -9,9 +9,11 @@ import '../../models/return_gift_bundle.dart';
 import '../../providers/cart_provider.dart';
 import '../../services/shopify_service.dart';
 import '../../widgets/accessory_quick_view_modal.dart';
-import '../../widgets/cart_drawer_modal.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../core/constants/app_constants.dart';
 import '../../widgets/custom_bag_preview_card.dart';
 import '../../widgets/customize_theme_bag_modal.dart';
+import '../../widgets/ui_kit.dart';
 import '../cart/cart_screen.dart';
 
 class ReturnGiftSolutionsScreen extends StatefulWidget {
@@ -166,17 +168,7 @@ class _ReturnGiftSolutionsScreenState extends State<ReturnGiftSolutionsScreen> {
     await cart.addReturnGiftBundle(_bundle);
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('🎉 Added ${_bundle.numberOfBags} Return Gift Bags to Cart!'),
-        backgroundColor: AppColors.primary,
-        action: SnackBarAction(
-          label: 'View Bag',
-          textColor: AppColors.accentYellow,
-          onPressed: () => CartDrawerModal.show(context),
-        ),
-      ),
-    );
+    showAppSnack(context, '🎉 Added ${_bundle.numberOfBags} return gift bags to your cart');
 
     Navigator.push(
       context,
@@ -193,12 +185,7 @@ class _ReturnGiftSolutionsScreenState extends State<ReturnGiftSolutionsScreen> {
           'Return Gift Solutions',
           style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.bold),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.shopping_bag_outlined),
-            onPressed: () => CartDrawerModal.show(context),
-          ),
-        ],
+        actions: const [CartIconButton(), SizedBox(width: 6)],
       ),
       bottomNavigationBar: _currentStep == 2
           ? _buildStep2StickyBottomBar()
@@ -1351,14 +1338,26 @@ class _ReturnGiftSolutionsScreenState extends State<ReturnGiftSolutionsScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // Milestone Discount Badges
-                Row(
-                  children: [
-                    _buildDiscountBadge('10+ Bags = 5% OFF', _bundle.numberOfBags >= 10),
-                    const SizedBox(width: 8),
-                    _buildDiscountBadge('15+ Bags = 10% OFF', _bundle.numberOfBags >= 15),
-                  ],
+                // Bulk quotes are handled by the team (no automatic discounts on the store).
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () {
+                    final text = 'Hi Titepo team, I need ${_bundle.numberOfBags}+ return gift bags. '
+                        'Could you share bulk pricing?';
+                    launchUrl(
+                      Uri.parse('${AppConstants.supportWhatsApp}?text=${Uri.encodeComponent(text)}'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
+                  child: _buildDiscountBadge('Large order? Ask for a bulk quote on WhatsApp', true),
                 ),
+                if (_bundle.isCustomBag && _bundle.customImageBytes != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'After placing your order you\'ll be asked to send your artwork on WhatsApp for printing.',
+                    style: GoogleFonts.plusJakartaSans(fontSize: 11.5, color: AppColors.textSecondary),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1378,14 +1377,6 @@ class _ReturnGiftSolutionsScreenState extends State<ReturnGiftSolutionsScreen> {
                 _buildPriceRow('Cost per Bag Bundle', Formatters.formatPrice(_bundle.pricePerBag)),
                 const SizedBox(height: 6),
                 _buildPriceRow('Total for ${_bundle.numberOfBags} Bags', Formatters.formatPrice(_bundle.rawSubtotal)),
-                if (_bundle.bulkDiscountPercent > 0) ...[
-                  const SizedBox(height: 6),
-                  _buildPriceRow(
-                    'Bulk Discount (${_bundle.bulkDiscountPercent}%)',
-                    '-${Formatters.formatPrice(_bundle.discountAmount)}',
-                    color: const Color(0xFF16A34A),
-                  ),
-                ],
                 const Divider(height: 20),
                 _buildPriceRow(
                   'Final Order Total',

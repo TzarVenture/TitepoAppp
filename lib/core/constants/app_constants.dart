@@ -1,35 +1,56 @@
 class AppConstants {
   static const String appName = 'Titepo';
-  static const String appTagline = "Kids Toys & Birthday Return Gifts";
+  static const String appTagline = 'Kids Toys & Birthday Return Gifts';
+
+  // ── Shopify store connection ────────────────────────────────────────────
+  /// Primary storefront domain (same store that powers titepo.com).
   static const String storeDomain = 'https://titepo.com';
-  static const String storefrontAccessToken = ''; // Enter Storefront Access Token if generated in Shopify Admin
-  static const String customerAccountUrl = 'https://titepo.com/account/login';
-  static const String orderTrackingUrl = 'https://titepo.com/account/orders';
+
+  /// Storefront API version used for cart + checkout.
+  static const String storefrontApiVersion = '2025-07';
+
+  /// Optional public Storefront access token (Shopify Admin → Headless /
+  /// Develop apps). The cart & checkout flow works without it (tokenless
+  /// access); adding one raises rate limits.
+  static const String storefrontAccessToken = '';
+
+  /// Shopify shop ID — used for the new Customer Accounts portal.
+  static const String shopId = '82447925463';
+  static const String customerAccountUrl = 'https://shopify.com/$shopId/account';
+  static const String customerOrdersUrl = 'https://shopify.com/$shopId/account/orders';
+
+  // ── Support ─────────────────────────────────────────────────────────────
   static const String supportEmail = 'titepo@tzar.co';
-  static const String supportPhone = '+91 98765 43210';
-  static const String supportWhatsApp = 'https://wa.me/919876543210';
+  static const String supportPhone = '+91 7304056607';
+  static const String supportWhatsApp = 'https://wa.me/917304056607';
   static const String instagramUrl = 'https://www.instagram.com/titepotoystore?igsh=YXMwNXFncm95NWVj';
-  static const double freeShippingThreshold = 500.0;
-  static const double defaultShippingFee = 50.0;
+
   static const String defaultCurrencySymbol = '₹';
 
-  // Categories
+  // Collections highlighted on the website's "Shop by Categories" section.
   static const List<Map<String, String>> featuredCategories = [
     {'handle': 'return-gift', 'title': 'Return Gifts', 'icon': '🎁'},
-    {'handle': 'cars', 'title': 'Die-Cast Cars', 'icon': '🏎️'},
-    {'handle': 'bags', 'title': 'School Bags', 'icon': '🎒'},
-    {'handle': 'drinkware', 'title': 'Water Bottles', 'icon': '🥤'},
+    {'handle': 'cars', 'title': 'Cars', 'icon': '🏎️'},
+    {'handle': 'bags', 'title': 'Bags', 'icon': '🎒'},
+    {'handle': 'drinkware', 'title': 'Drinkware', 'icon': '🥤'},
     {'handle': 'lunch-box', 'title': 'Lunch Boxes', 'icon': '🍱'},
-    {'handle': 'mug', 'title': 'Cute Mugs', 'icon': '☕'},
+    {'handle': 'mug', 'title': 'Mugs', 'icon': '☕'},
     {'handle': 'stationary', 'title': 'Stationery', 'icon': '✏️'},
-    {'handle': 'new-arrival', 'title': 'New Arrivals', 'icon': '✨'},
+    {'handle': 'accessories', 'title': 'Accessories', 'icon': '🧸'},
   ];
 
-  // Marquee Messages
+  /// Collection handles that are internal / not useful as shopping categories.
+  static const Set<String> hiddenCollections = {
+    'frontpage',
+    'custom-products',
+    'raksha-bandhan',
+  };
+
+  // Announcement strip (keep claims in sync with the live store).
   static const List<String> marqueeMessages = [
-    '🔥 10% OFF SITEWIDE - USE CODE: TITEPO10',
-    '🎁 WE DO RETURN GIFT SOLUTIONS | ENQUIRE NOW',
-    '🚚 FREE SHIPPING ON ORDERS OVER ₹500',
-    '⭐ 100% SAFE & NON-TOXIC KIDS PRODUCTS',
+    '🎁 Return gift solutions for every party',
+    '🔒 100% secure Shopify checkout',
+    '🧸 Safe, non-toxic & kid-friendly products',
+    '💬 Bulk & custom orders — chat with us on WhatsApp',
   ];
 }

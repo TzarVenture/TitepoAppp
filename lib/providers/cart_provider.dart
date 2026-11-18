@@ -1,252 +1,336 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/cart_item.dart';
 import '../models/product.dart';
 import '../models/return_gift_bundle.dart';
 import '../services/storage_service.dart';
-import '../core/constants/app_constants.dart';
+import '../services/storefront_service.dart';
 
-class CouponModel {
-  final String code;
-  final String description;
-  final double discountPercent; // e.g. 10.0 for 10%
-  final double? minOrderValue;
+/// Result of preparing a real Shopify checkout.
+class CheckoutPreparation {
+  final ShopifyCart cart;
 
-  const CouponModel({
-    required this.code,
-    required this.description,
-    required this.discountPercent,
-    this.minOrderValue,
-  });
+  /// Messages about lines Shopify changed (e.g. limited stock).
+  final List<String> adjustments;
+  const CheckoutPreparation(this.cart, this.adjustments);
 }
 
 class CartProvider with ChangeNotifier {
+  final StorefrontService _storefront;
+  CartProvider({StorefrontService? storefront}) : _storefront = storefront ?? StorefrontService();
+
   List<CartItem> _items = [];
   String? _appliedCouponCode;
-  double _discountAmount = 0.0;
-  String? _deliveryPincode;
-  String? _deliveryEstimateText;
+  String? _orderNote;
 
-  // Available real promo coupons
-  static const List<CouponModel> availableCoupons = [
-    CouponModel(
-      code: 'TITEPO10',
-      description: 'Flat 10% OFF on all toys & return gifts',
-      discountPercent: 10.0,
-      minOrderValue: 0.0,
-    ),
-    CouponModel(
-      code: 'BIRTHDAY15',
-      description: 'Flat 15% OFF on orders over ₹1,500',
-      discountPercent: 15.0,
-      minOrderValue: 1500.0,
-    ),
-    CouponModel(
-      code: 'BULK20',
-      description: 'Flat 20% OFF on bulk return gift orders over ₹3,000',
-      discountPercent: 20.0,
-      minOrderValue: 3000.0,
-    ),
-  ];
+  /// Latest pricing from Shopify for the current cart contents.
+  ShopifyCart? _quote;
+  bool _isQuoting = false;
+  String? _quoteError;
+  Timer? _quoteDebounce;
+  int _quoteGeneration = 0;
 
-  List<CartItem> get items => _items;
+  List<CartItem> get items => List.unmodifiable(_items);
   String? get appliedCouponCode => _appliedCouponCode;
-  double get discountAmount => _discountAmount;
-  String? get deliveryPincode => _deliveryPincode;
-  String? get deliveryEstimateText => _deliveryEstimateText;
+  String? get orderNote => _orderNote;
+  ShopifyCart? get quote => _quote;
+  bool get isQuoting => _isQuoting;
+  String? get quoteError => _quoteError;
+  bool get isEmpty => _items.isEmpty;
 
-  int get totalItemCount {
-    int count = 0;
-    for (var item in _items) {
-      count += item.quantity;
-    }
-    return count;
-  }
+  int get totalItemCount => _items.fold(0, (s, i) => s + i.quantity);
 
-  double get subtotal {
-    double sum = 0.0;
-    for (var item in _items) {
-      sum += item.totalPrice;
-    }
-    return sum;
-  }
+  /// Subtotal computed from catalogue prices (shown until Shopify responds).
+  double get subtotal => _items.fold(0.0, (s, i) => s + i.totalPrice);
 
-  bool get isFreeShippingEligible => subtotal >= AppConstants.freeShippingThreshold;
+  /// Discount confirmed by Shopify.
+  double get discountAmount => _quote?.discountTotal ?? 0.0;
 
-  double get remainingForFreeShipping {
-    if (isFreeShippingEligible) return 0.0;
-    return AppConstants.freeShippingThreshold - subtotal;
-  }
+  /// Total confirmed by Shopify (before shipping, which is chosen at checkout).
+  double get grandTotal => _quote?.total ?? subtotal;
 
-  double get shippingFee {
-    if (_items.isEmpty || isFreeShippingEligible) return 0.0;
-    return AppConstants.defaultShippingFee;
-  }
+  List<CartItem> get unavailableItems => _items.where((i) => !i.isPurchasable).toList();
 
-  double get grandTotal {
-    double total = subtotal - _discountAmount + shippingFee;
-    return total > 0 ? total : 0.0;
-  }
+  int quantityInCart(String productId) =>
+      _items.where((i) => i.product.id == productId).fold(0, (s, i) => s + i.quantity);
 
   Future<void> initCart() async {
     _items = await StorageService.loadCart();
+    _appliedCouponCode = await StorageService.loadAppliedCoupon();
     notifyListeners();
+    _scheduleQuote(immediate: true);
   }
 
-  /// Add product with variant to cart
-  Future<void> addToCart(ProductModel product, {ProductVariant? variant, int quantity = 1}) async {
-    final key = '${product.id}_${variant?.id ?? "default"}';
-    final existingIndex = _items.indexWhere((item) => item.cartKey == key);
+  // ── Mutations ────────────────────────────────────────────────────────────
 
-    if (existingIndex >= 0) {
-      _items[existingIndex].quantity += quantity;
+  Future<void> addToCart(
+    ProductModel product, {
+    ProductVariant? variant,
+    int quantity = 1,
+    Map<String, String>? attributes,
+    String? customNotes,
+  }) async {
+    final chosen = variant ?? product.firstAvailableVariant;
+    final candidate = CartItem(
+      product: product,
+      selectedVariant: chosen,
+      quantity: quantity,
+      attributes: attributes,
+      customNotes: customNotes,
+    );
+    final idx = _items.indexWhere((i) => i.cartKey == candidate.cartKey);
+    if (idx >= 0) {
+      _items[idx].quantity += quantity;
     } else {
-      _items.add(CartItem(
-        product: product,
-        selectedVariant: variant ?? (product.variants.isNotEmpty ? product.variants.first : null),
-        quantity: quantity,
-      ));
+      _items.add(candidate);
     }
-    _recalculateDiscount();
-    await StorageService.saveCart(_items);
-    notifyListeners();
+    await _persistAndRequote();
   }
 
-  /// Add complete Return Gift Bundle (bag + accessories) into cart
+  /// Adds a return-gift bundle: the bag (with its customisation as Shopify
+  /// line-item properties) plus every accessory × number of bags.
   Future<void> addReturnGiftBundle(ReturnGiftBundle bundle) async {
-    if (bundle.selectedBag == null) return;
+    final bag = bundle.selectedBag;
+    if (bag == null) return;
 
     final summaries = <String>[];
     bundle.selectedItems.forEach((pId, qty) {
       final acc = bundle.accessoriesMap[pId];
-      if (acc != null) {
-        summaries.add('${acc.title} (x$qty)');
-      }
+      if (acc != null) summaries.add('${acc.displayTitle} ×$qty');
     });
+
+    final attributes = <String, String>{
+      'Bag type': bundle.isCustomBag ? 'Custom printed bag' : bag.displayTitle,
+      if (summaries.isNotEmpty) 'Fill each bag with': summaries.join(', '),
+      if (bundle.customDesignNotes.trim().isNotEmpty) 'Design notes': bundle.customDesignNotes.trim(),
+      if (bundle.customPartyMessage.trim().isNotEmpty) 'Party message': bundle.customPartyMessage.trim(),
+      if (bundle.isCustomBag && bundle.customImageBytes != null)
+        'Artwork': 'Customer will share artwork on WhatsApp (${bundle.customImageFileName ?? "image"})',
+    };
 
     final notes = bundle.isCustomBag
-        ? 'Custom Bag: ${bundle.customDesignNotes.isNotEmpty ? bundle.customDesignNotes : "Uploaded Image"}'
-        : 'Theme Bag: ${bundle.selectedBag!.title}';
+        ? 'Custom bag${bundle.customDesignNotes.isNotEmpty ? ": ${bundle.customDesignNotes}" : ""}'
+        : 'Theme bag: ${bag.displayTitle}';
 
-    // 1. Add the bag with its total bulk count and custom notes
-    final bagItem = CartItem(
-      product: bundle.selectedBag!,
-      selectedVariant: bundle.selectedBag!.variants.isNotEmpty ? bundle.selectedBag!.variants.first : null,
+    _items.add(CartItem(
+      product: bag,
+      selectedVariant: bag.firstAvailableVariant,
       quantity: bundle.numberOfBags,
-      customNotes: '$notes\nIncludes inside each bag: ${summaries.join(", ")}',
+      customNotes: summaries.isEmpty ? notes : '$notes\nInside each bag: ${summaries.join(", ")}',
       bundleItemSummaries: summaries,
-    );
-    _items.add(bagItem);
+      attributes: attributes,
+    ));
 
-    // 2. Add each accessory multiplied by the number of bags so inventory and pricing sync seamlessly
     bundle.selectedItems.forEach((pId, qtyPerBag) {
       final acc = bundle.accessoriesMap[pId];
-      if (acc != null) {
-        final totalQty = qtyPerBag * bundle.numberOfBags;
-        _items.add(
-          CartItem(
-            product: acc,
-            selectedVariant: acc.variants.isNotEmpty ? acc.variants.first : null,
-            quantity: totalQty,
-            customNotes: 'Part of Return Gift Bag (${bundle.selectedBag!.title})',
-          ),
-        );
-      }
+      if (acc == null) return;
+      _items.add(CartItem(
+        product: acc,
+        selectedVariant: acc.firstAvailableVariant,
+        quantity: qtyPerBag * bundle.numberOfBags,
+        customNotes: 'For return gift bags (${bag.displayTitle})',
+        attributes: {'Return gift bag': bag.displayTitle},
+      ));
     });
 
-    await StorageService.saveCart(_items);
-    _recalculateDiscount();
-    notifyListeners();
+    await _persistAndRequote();
   }
 
-  /// Update item quantity
   Future<void> updateQuantity(String cartKey, int delta) async {
     final index = _items.indexWhere((item) => item.cartKey == cartKey);
-    if (index >= 0) {
-      _items[index].quantity += delta;
-      if (_items[index].quantity <= 0) {
-        _items.removeAt(index);
-      }
-      _recalculateDiscount();
-      await StorageService.saveCart(_items);
-      notifyListeners();
-    }
+    if (index < 0) return;
+    _items[index].quantity += delta;
+    if (_items[index].quantity <= 0) _items.removeAt(index);
+    await _persistAndRequote();
   }
 
-  /// Remove item completely
+  Future<void> setQuantity(String cartKey, int quantity) async {
+    final index = _items.indexWhere((item) => item.cartKey == cartKey);
+    if (index < 0) return;
+    if (quantity <= 0) {
+      _items.removeAt(index);
+    } else {
+      _items[index].quantity = quantity;
+    }
+    await _persistAndRequote();
+  }
+
   Future<void> removeFromCart(String cartKey) async {
     _items.removeWhere((item) => item.cartKey == cartKey);
-    _recalculateDiscount();
-    await StorageService.saveCart(_items);
-    notifyListeners();
+    await _persistAndRequote();
   }
 
-  /// Apply coupon code with error reason
-  String? applyCoupon(String code) {
-    final formatted = code.trim().toUpperCase();
-    final coupon = availableCoupons.cast<CouponModel?>().firstWhere(
-          (c) => c?.code == formatted,
-          orElse: () => null,
-        );
-
-    if (coupon == null) {
-      return 'Invalid coupon code. Try TITEPO10';
-    }
-
-    if (coupon.minOrderValue != null && subtotal < coupon.minOrderValue!) {
-      return 'Requires minimum order of ₹${coupon.minOrderValue!.toStringAsFixed(0)}';
-    }
-
-    _appliedCouponCode = coupon.code;
-    _discountAmount = subtotal * (coupon.discountPercent / 100.0);
-    notifyListeners();
-    return null; // Success (no error)
-  }
-
-  void removeCoupon() {
-    _appliedCouponCode = null;
-    _discountAmount = 0.0;
-    notifyListeners();
-  }
-
-  void _recalculateDiscount() {
-    if (_appliedCouponCode == null) {
-      _discountAmount = 0.0;
-      return;
-    }
-    final coupon = availableCoupons.cast<CouponModel?>().firstWhere(
-          (c) => c?.code == _appliedCouponCode,
-          orElse: () => null,
-        );
-    if (coupon != null && (coupon.minOrderValue == null || subtotal >= coupon.minOrderValue!)) {
-      _discountAmount = subtotal * (coupon.discountPercent / 100.0);
-    } else {
-      _appliedCouponCode = null;
-      _discountAmount = 0.0;
-    }
-  }
-
-  /// Delivery Pincode Estimator
-  void setDeliveryPincode(String pin) {
-    _deliveryPincode = pin;
-    final now = DateTime.now();
-    final estStart = now.add(const Duration(days: 3));
-    final estEnd = now.add(const Duration(days: 5));
-    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    _deliveryEstimateText = 'Delivering to $pin by ${estStart.day} - ${estEnd.day} ${months[estEnd.month - 1]} 🚚';
-    notifyListeners();
-  }
-
-  void clearDeliveryPincode() {
-    _deliveryPincode = null;
-    _deliveryEstimateText = null;
-    notifyListeners();
+  void setOrderNote(String? note) {
+    _orderNote = (note == null || note.trim().isEmpty) ? null : note.trim();
   }
 
   Future<void> clearCart() async {
     _items.clear();
     _appliedCouponCode = null;
-    _discountAmount = 0.0;
+    _orderNote = null;
+    _quote = null;
+    _quoteError = null;
     await StorageService.saveCart(_items);
+    await StorageService.saveAppliedCoupon(null);
     notifyListeners();
+  }
+
+  // ── Discount codes (validated by Shopify) ────────────────────────────────
+
+  /// Returns null on success, or a message explaining why the code was rejected.
+  Future<String?> applyCoupon(String code) async {
+    final formatted = code.trim().toUpperCase();
+    if (formatted.isEmpty) return 'Enter a discount code.';
+    if (_items.isEmpty) return 'Add items to your cart first.';
+
+    try {
+      final cart = await _storefront.createCart(items: _items, discountCodes: [formatted]);
+      final match = cart.discountCodes.where((d) => d.code.toUpperCase() == formatted);
+      if (match.isEmpty || !match.first.applicable) {
+        return '"$formatted" isn\'t valid for the items in your cart.';
+      }
+      _appliedCouponCode = formatted;
+      _quote = cart;
+      _quoteError = null;
+      await StorageService.saveAppliedCoupon(formatted);
+      notifyListeners();
+      return null;
+    } on StorefrontException catch (e) {
+      return e.message;
+    }
+  }
+
+  Future<void> removeCoupon() async {
+    _appliedCouponCode = null;
+    await StorageService.saveAppliedCoupon(null);
+    _quote = null;
+    notifyListeners();
+    _scheduleQuote(immediate: true);
+  }
+
+  // ── Shopify pricing & checkout ───────────────────────────────────────────
+
+  Future<void> refreshQuote() => _runQuote();
+
+  /// Builds a fresh Shopify cart for checkout and reconciles quantities
+  /// that Shopify adjusted (e.g. not enough stock).
+  Future<CheckoutPreparation> prepareCheckout({BuyerDetails? buyer}) async {
+    final purchasable = _items.where((i) => i.isPurchasable).toList();
+    if (purchasable.isEmpty) {
+      throw StorefrontException('Your cart has no items that can be ordered right now.');
+    }
+
+    final cart = await _storefront.createCart(
+      items: purchasable,
+      discountCodes: _appliedCouponCode != null ? [_appliedCouponCode!] : const [],
+      note: _orderNote,
+      buyer: buyer,
+    );
+
+    final adjustments = <String>[];
+    // Compare requested vs. accepted quantity per variant.
+    final requested = <String, int>{};
+    for (final i in purchasable) {
+      requested.update(i.shopifyVariantId!, (q) => q + i.quantity, ifAbsent: () => i.quantity);
+    }
+    requested.forEach((vid, want) {
+      final got = cart.quantityFor(vid);
+      if (got < want) {
+        final item = purchasable.firstWhere((i) => i.shopifyVariantId == vid);
+        adjustments.add(got == 0
+            ? '${item.product.displayTitle} is out of stock and was removed.'
+            : 'Only $got of ${item.product.displayTitle} available — quantity updated.');
+        _reduceVariantTo(vid, got);
+      }
+    });
+
+    if (adjustments.isNotEmpty) {
+      await StorageService.saveCart(_items);
+    }
+    _quote = cart;
+    _quoteError = null;
+    notifyListeners();
+    return CheckoutPreparation(cart, adjustments);
+  }
+
+  void _reduceVariantTo(String variantId, int allowed) {
+    var remaining = allowed;
+    for (final item in _items.where((i) => i.shopifyVariantId == variantId).toList()) {
+      if (remaining <= 0) {
+        _items.remove(item);
+      } else if (item.quantity > remaining) {
+        item.quantity = remaining;
+        remaining = 0;
+      } else {
+        remaining -= item.quantity;
+      }
+    }
+  }
+
+  Future<void> _persistAndRequote() async {
+    _quote = null;
+    notifyListeners();
+    await StorageService.saveCart(_items);
+    _scheduleQuote();
+  }
+
+  void _scheduleQuote({bool immediate = false}) {
+    _quoteDebounce?.cancel();
+    if (_items.isEmpty) {
+      _quote = null;
+      _quoteError = null;
+      _isQuoting = false;
+      notifyListeners();
+      return;
+    }
+    _quoteDebounce = Timer(Duration(milliseconds: immediate ? 0 : 700), _runQuote);
+  }
+
+  Future<void> _runQuote() async {
+    if (_items.where((i) => i.isPurchasable).isEmpty) return;
+    final generation = ++_quoteGeneration;
+    _isQuoting = true;
+    notifyListeners();
+    try {
+      final cart = await _storefront.createCart(
+        items: _items.where((i) => i.isPurchasable).toList(),
+        discountCodes: _appliedCouponCode != null ? [_appliedCouponCode!] : const [],
+      );
+      if (generation != _quoteGeneration) return;
+      _quote = cart;
+      _quoteError = null;
+
+      // Drop a saved code that is no longer applicable (e.g. cart changed).
+      if (_appliedCouponCode != null &&
+          !cart.discountCodes.any((d) => d.code.toUpperCase() == _appliedCouponCode && d.applicable)) {
+        _quoteError = 'Code $_appliedCouponCode no longer applies to this cart and was removed.';
+        _appliedCouponCode = null;
+        await StorageService.saveAppliedCoupon(null);
+      }
+    } on StorefrontException catch (e) {
+      if (generation != _quoteGeneration) return;
+      _quoteError = e.message;
+    } finally {
+      if (generation == _quoteGeneration) {
+        _isQuoting = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  bool _disposed = false;
+
+  /// In-flight Shopify requests may complete after disposal — ignore them.
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _quoteGeneration++; // invalidate any in-flight quote
+    _quoteDebounce?.cancel();
+    super.dispose();
   }
 }

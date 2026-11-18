@@ -104,7 +104,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       shopifyProvider.loadCatalogData(),
       cartProvider.initCart(),
       wishlistProvider.initWishlist(),
-      Future.delayed(const Duration(milliseconds: 2200)),
+      Future.delayed(const Duration(milliseconds: 1200)),
     ]);
 
     if (mounted) {

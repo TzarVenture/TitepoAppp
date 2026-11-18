@@ -51,15 +51,9 @@ class ReturnGiftBundle {
 
   double get rawSubtotal => pricePerBag * numberOfBags;
 
-  int get bulkDiscountPercent {
-    if (numberOfBags >= 15) return 10;
-    if (numberOfBags >= 10) return 5;
-    return 0;
-  }
-
-  double get discountAmount => rawSubtotal * (bulkDiscountPercent / 100);
-
-  double get finalTotal => rawSubtotal - discountAmount;
+  /// Total at catalogue prices — exactly what Shopify will charge
+  /// (the store has no automatic bulk discounts).
+  double get finalTotal => rawSubtotal;
 
   void toggleItem(ProductModel product) {
     if (selectedItems.containsKey(product.id)) {

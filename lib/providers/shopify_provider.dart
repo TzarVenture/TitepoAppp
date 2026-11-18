@@ -4,13 +4,11 @@ import '../models/collection.dart';
 import '../services/shopify_service.dart';
 
 class ShopifyProvider with ChangeNotifier {
-  final ShopifyService _shopifyService = ShopifyService();
+  final ShopifyService _service = ShopifyService();
 
   List<ProductModel> _allProducts = [];
-  List<ProductModel> _featuredProducts = [];
-  List<ProductModel> _newArrivals = [];
-  List<ProductModel> _returnGifts = [];
   List<CollectionModel> _collections = [];
+  final Map<String, List<ProductModel>> _collectionCache = {};
   List<ProductModel> _searchResults = [];
   List<ProductModel> _categoryProducts = [];
 
@@ -19,95 +17,156 @@ class ShopifyProvider with ChangeNotifier {
   bool _isSearching = false;
   String? _errorMessage;
   String _selectedCollectionHandle = 'all';
+  int _searchToken = 0;
 
-  // Getters
   List<ProductModel> get allProducts => _allProducts;
-  List<ProductModel> get featuredProducts => _featuredProducts;
-  List<ProductModel> get newArrivals => _newArrivals;
-  List<ProductModel> get returnGifts => _returnGifts;
   List<CollectionModel> get collections => _collections;
   List<ProductModel> get searchResults => _searchResults;
   List<ProductModel> get categoryProducts => _categoryProducts;
-
   bool get isLoading => _isLoading;
   bool get isCategoryLoading => _isCategoryLoading;
   bool get isSearching => _isSearching;
   String? get errorMessage => _errorMessage;
   String get selectedCollectionHandle => _selectedCollectionHandle;
 
-  /// Load initial catalog data (Products & Collections)
+  /// Homepage rails mirror titepo.com's homepage collections.
+  List<ProductModel> get newArrivals {
+    final c = _collectionCache['new-arrival-1'] ?? _collectionCache['new-arrival'];
+    if (c != null && c.isNotEmpty) return c;
+    final sorted = [..._allProducts]
+      ..sort((a, b) => (b.publishedAt ?? DateTime(2000)).compareTo(a.publishedAt ?? DateTime(2000)));
+    return sorted.take(12).toList();
+  }
+
+  List<ProductModel> get featuredProducts {
+    final c = _collectionCache['new-arrival'];
+    if (c != null && c.isNotEmpty) return c;
+    return _allProducts.take(10).toList();
+  }
+
+  List<ProductModel> get returnGifts => _collectionCache['return-gift'] ?? const [];
+
+  List<ProductModel> get onSale {
+    final list = _allProducts.where((p) => p.isOnSale && p.available).toList()
+      ..sort((a, b) => b.discountPercentage.compareTo(a.discountPercentage));
+    return list.take(12).toList();
+  }
+
+  List<ProductModel>? productsFor(String handle) =>
+      handle == 'all' ? _allProducts : _collectionCache[handle];
+
+  CollectionModel? collectionByHandle(String handle) {
+    for (final c in _collections) {
+      if (c.handle == handle) return c;
+    }
+    return null;
+  }
+
+  ProductModel? productByHandle(String handle) {
+    for (final p in _allProducts) {
+      if (p.handle == handle) return p;
+    }
+    return null;
+  }
+
   Future<void> loadCatalogData() async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final productsFuture = _shopifyService.fetchProducts(limit: 50);
-      final collectionsFuture = _shopifyService.fetchCollections();
-
-      final results = await Future.wait([productsFuture, collectionsFuture]);
-
+      final results = await Future.wait([
+        _service.fetchProducts(),
+        _service.fetchCollections(),
+        _loadCollectionIntoCache('new-arrival-1'),
+        _loadCollectionIntoCache('new-arrival'),
+        _loadCollectionIntoCache('return-gift'),
+      ]);
       _allProducts = results[0] as List<ProductModel>;
       _collections = results[1] as List<CollectionModel>;
-
-      // Categorize products for homepage sections
-      _featuredProducts = _allProducts.take(8).toList();
-      _newArrivals = _allProducts.where((p) => p.tags.contains('new-arrival') || p.isOnSale).toList();
-      if (_newArrivals.isEmpty) _newArrivals = _allProducts.take(6).toList();
-
-      _returnGifts = _allProducts.where((p) => p.tags.contains('return-gift') || p.handle.contains('return')).toList();
-      if (_returnGifts.isEmpty) _returnGifts = _allProducts.reversed.take(6).toList();
-
-      _categoryProducts = List.from(_allProducts);
-    } catch (e) {
-      _errorMessage = 'Failed to load Titepo products. Please check your connection.';
+      if (_selectedCollectionHandle == 'all') _categoryProducts = _allProducts;
+      if (_allProducts.isEmpty) {
+        _errorMessage = 'Couldn\'t load products. Check your connection and pull to refresh.';
+      }
+    } catch (_) {
+      _errorMessage = 'Couldn\'t load products. Check your connection and pull to refresh.';
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  /// Select category and fetch products for it
+  Future<List<ProductModel>> _loadCollectionIntoCache(String handle) async {
+    final list = await _service.fetchProductsByCollection(handle);
+    if (list.isNotEmpty) _collectionCache[handle] = list;
+    return list;
+  }
+
+  /// Loads (and caches) a collection's products.
+  Future<List<ProductModel>> loadCollection(String handle, {bool force = false}) async {
+    if (handle == 'all') return _allProducts;
+    if (!force && _collectionCache.containsKey(handle)) return _collectionCache[handle]!;
+    final list = await _loadCollectionIntoCache(handle);
+    notifyListeners();
+    return list;
+  }
+
   Future<void> selectCategory(String handle) async {
     _selectedCollectionHandle = handle;
+    final cached = productsFor(handle);
+    if (cached != null) {
+      _categoryProducts = cached;
+      notifyListeners();
+      return;
+    }
     _isCategoryLoading = true;
     notifyListeners();
-
     try {
-      if (handle == 'all' || handle.isEmpty) {
-        _categoryProducts = List.from(_allProducts);
-      } else {
-        _categoryProducts = await _shopifyService.fetchProductsByCollection(handle);
-      }
-    } catch (e) {
-      _categoryProducts = _allProducts.where((p) {
-        return p.tags.contains(handle) || p.productType.toLowerCase().contains(handle.toLowerCase());
-      }).toList();
+      _categoryProducts = await loadCollection(handle);
     } finally {
       _isCategoryLoading = false;
       notifyListeners();
     }
   }
 
-  /// Search catalog
+  Future<List<ProductModel>> recommendationsFor(ProductModel product) async {
+    final recs = await _service.fetchRecommendations(product.id);
+    return recs.where((p) => p.id != product.id).toList();
+  }
+
+  /// Live product data (fresh price / stock) for the detail page.
+  Future<ProductModel?> refreshProduct(String handle) => _service.fetchProductByHandle(handle);
+
   Future<void> search(String query) async {
-    if (query.trim().isEmpty) {
+    final token = ++_searchToken;
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) {
       _searchResults = [];
       _isSearching = false;
       notifyListeners();
       return;
     }
 
+    // Instant local results from the full catalogue…
+    final words = q.split(RegExp(r'\s+'));
+    _searchResults = _allProducts.where((p) {
+      final hay = '${p.title} ${p.productType} ${p.tags.join(' ')} ${p.vendor}'.toLowerCase();
+      return words.every(hay.contains);
+    }).toList();
     _isSearching = true;
     notifyListeners();
 
-    try {
-      _searchResults = await _shopifyService.searchProducts(query);
-    } catch (e) {
-      _searchResults = [];
-    } finally {
-      _isSearching = false;
-      notifyListeners();
+    // …then Shopify's relevance ranking on top.
+    final handles = await _service.searchHandles(query);
+    if (token != _searchToken) return;
+    final ranked = <ProductModel>[];
+    for (final h in handles) {
+      final p = productByHandle(h);
+      if (p != null) ranked.add(p);
     }
+    final rankedIds = ranked.map((p) => p.id).toSet();
+    _searchResults = [...ranked, ..._searchResults.where((p) => !rankedIds.contains(p.id))];
+    _isSearching = false;
+    notifyListeners();
   }
 }

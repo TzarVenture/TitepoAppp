@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../models/collection.dart';
 import '../../providers/shopify_provider.dart';
-import '../../widgets/product_card.dart';
-import '../../widgets/skeleton_loader.dart';
+import '../../widgets/product_browser.dart';
+import '../../widgets/ui_kit.dart';
+import '../search/search_screen.dart';
 
+/// "Shop" tab: every collection from the store + the full catalogue.
 class CategoriesScreen extends StatefulWidget {
   final String? initialCategoryHandle;
-
   const CategoriesScreen({super.key, this.initialCategoryHandle});
 
   @override
@@ -16,176 +18,118 @@ class CategoriesScreen extends StatefulWidget {
 }
 
 class _CategoriesScreenState extends State<CategoriesScreen> {
-  String _sortOption = 'featured'; // 'featured', 'price_low', 'price_high', 'rating'
-  final ScrollController _tabsScrollController = ScrollController();
+  late String _handle = widget.initialCategoryHandle ?? 'all';
+  ProductSort _sort = ProductSort.featured;
+  bool _inStock = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.initialCategoryHandle != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final shopify = Provider.of<ShopifyProvider>(context, listen: false);
-        shopify.selectCategory(widget.initialCategoryHandle!);
-
-        // Auto-scroll to selected category tab
-        final idx = AppConstants.featuredCategories
-            .indexWhere((c) => c['handle'] == widget.initialCategoryHandle);
-        if (idx > 0 && _tabsScrollController.hasClients) {
-          _tabsScrollController.animateTo(
-            idx * 110.0,
-            duration: const Duration(milliseconds: 350),
-            curve: Curves.easeInOut,
-          );
-        }
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<ShopifyProvider>().selectCategory(_handle);
+    });
   }
 
-  @override
-  void dispose() {
-    _tabsScrollController.dispose();
-    super.dispose();
+  void _select(String handle) {
+    setState(() => _handle = handle);
+    context.read<ShopifyProvider>().selectCategory(handle);
+  }
+
+  List<CollectionModel> _orderedCollections(List<CollectionModel> all) {
+    final featured = AppConstants.featuredCategories.map((c) => c['handle']).toList();
+    final list = all.where((c) => c.productsCount > 0 || featured.contains(c.handle)).toList();
+    list.sort((a, b) {
+      final ia = featured.indexOf(a.handle), ib = featured.indexOf(b.handle);
+      if (ia == -1 && ib == -1) return a.title.compareTo(b.title);
+      if (ia == -1) return 1;
+      if (ib == -1) return -1;
+      return ia.compareTo(ib);
+    });
+    return list;
   }
 
   @override
   Widget build(BuildContext context) {
-    final shopifyProvider = Provider.of<ShopifyProvider>(context);
-    var products = List.from(shopifyProvider.categoryProducts);
-
-    // Apply sorting
-    if (_sortOption == 'price_low') {
-      products.sort((a, b) => a.price.compareTo(b.price));
-    } else if (_sortOption == 'price_high') {
-      products.sort((a, b) => b.price.compareTo(a.price));
-    } else if (_sortOption == 'rating') {
-      products.sort((a, b) => b.rating.compareTo(a.rating));
-    }
+    final shop = context.watch<ShopifyProvider>();
+    final collections = _orderedCollections(shop.collections);
+    final products = sortAndFilter(
+      shop.selectedCollectionHandle == _handle ? shop.categoryProducts : const [],
+      _sort,
+      _inStock,
+    );
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Categories & Collections'),
+        title: const Text('Shop'),
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.sort_rounded),
-            tooltip: 'Sort Products',
-            onSelected: (val) {
-              setState(() => _sortOption = val);
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'featured', child: Text('Featured')),
-              const PopupMenuItem(value: 'price_low', child: Text('Price: Low to High')),
-              const PopupMenuItem(value: 'price_high', child: Text('Price: High to Low')),
-              const PopupMenuItem(value: 'rating', child: Text('Highest Rated')),
-            ],
+          IconButton(
+            tooltip: 'Search',
+            icon: const Icon(Icons.search_rounded),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen())),
           ),
+          const CartIconButton(),
+          const SizedBox(width: 6),
         ],
       ),
-      body: Column(
-        children: [
-          // Top Category Tabs Bar
-          Container(
-            height: 54,
-            color: Colors.white,
-            child: ListView.builder(
-              controller: _tabsScrollController,
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              itemCount: AppConstants.featuredCategories.length,
-              itemBuilder: (context, index) {
-                final cat = AppConstants.featuredCategories[index];
-                final isSelected = shopifyProvider.selectedCollectionHandle == cat['handle'];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: FilterChip(
-                    selected: isSelected,
-                    showCheckmark: false,
-                    avatar: Text(
-                      cat['icon']!,
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    label: Text(cat['title']!),
-                    selectedColor: AppColors.primary,
-                    backgroundColor: AppColors.background,
-                    labelStyle: TextStyle(
-                      color: isSelected ? Colors.white : AppColors.textPrimary,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                      fontSize: 12.5,
-                    ),
-                    onSelected: (_) {
-                      shopifyProvider.selectCategory(cat['handle']!);
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
-
-          const Divider(height: 1),
-
-          // Count & Active Filter Indicator
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Showing ${products.length} Products',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textSecondary,
-                  ),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await shop.loadCatalogData();
+          if (_handle != 'all') await shop.loadCollection(_handle, force: true);
+          await shop.selectCategory(_handle);
+        },
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 52,
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    _chip('all', 'All'),
+                    ...collections.map((c) => _chip(c.handle, _pretty(c))),
+                  ],
                 ),
-                Text(
-                  'Sort: ${_sortOption.replaceAll('_', ' ').toUpperCase()}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+            SliverToBoxAdapter(
+              child: BrowseToolbar(
+                count: products.length,
+                sort: _sort,
+                inStockOnly: _inStock,
+                onSort: (s) => setState(() => _sort = s),
+                onInStock: (v) => setState(() => _inStock = v),
+              ),
+            ),
+            if (shop.isCategoryLoading || (shop.isLoading && shop.allProducts.isEmpty))
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else
+              BrowseGrid(products: products),
+          ],
+        ),
+      ),
+    );
+  }
 
-          // Product Grid
-          Expanded(
-            child: shopifyProvider.isCategoryLoading
-                ? const SkeletonLoader.grid(itemCount: 6)
-                : products.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.category_outlined, size: 60, color: AppColors.textMuted),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'No products found in this category.',
-                              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton(
-                              onPressed: () => shopifyProvider.selectCategory('all'),
-                              child: const Text('Browse All Products'),
-                            ),
-                          ],
-                        ),
-                      )
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(16),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          childAspectRatio: 0.52,
-                          crossAxisSpacing: 14,
-                          mainAxisSpacing: 14,
-                        ),
-                        itemCount: products.length,
-                        itemBuilder: (context, index) {
-                          return ProductCard(product: products[index]);
-                        },
-                      ),
-          ),
-        ],
+  String _pretty(CollectionModel c) {
+    for (final f in AppConstants.featuredCategories) {
+      if (f['handle'] == c.handle) return f['title']!;
+    }
+    return c.title;
+  }
+
+  Widget _chip(String handle, String label) {
+    final selected = _handle == handle;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label,
+            style: TextStyle(color: selected ? Colors.white : AppColors.ink, fontWeight: FontWeight.w700)),
+        selected: selected,
+        onSelected: (_) => _select(handle),
       ),
     );
   }

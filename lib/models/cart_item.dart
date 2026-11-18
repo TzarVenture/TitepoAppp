@@ -4,8 +4,14 @@ class CartItem {
   final ProductModel product;
   final ProductVariant? selectedVariant;
   int quantity;
+
+  /// Human-readable note shown in the app's cart.
   final String? customNotes;
   final List<String>? bundleItemSummaries;
+
+  /// Line-item properties sent to Shopify. They appear on the order in
+  /// Shopify Admin (e.g. bag theme, party message, contents per bag).
+  final Map<String, String> attributes;
 
   CartItem({
     required this.product,
@@ -13,34 +19,38 @@ class CartItem {
     this.quantity = 1,
     this.customNotes,
     this.bundleItemSummaries,
-  });
+    Map<String, String>? attributes,
+  }) : attributes = attributes ?? const {};
 
-  /// Price per item taking selected variant into account
-  double get unitPrice => selectedVariant?.price ?? product.price;
+  ProductVariant? get _variant =>
+      selectedVariant ?? (product.variants.isNotEmpty ? product.firstAvailableVariant : null);
 
-  /// Total price for this line item
+  double get unitPrice => _variant?.price ?? product.price;
+
+  double? get unitCompareAtPrice => _variant?.compareAtPrice ?? product.compareAtPrice;
+
   double get totalPrice => unitPrice * quantity;
 
-  /// Real Shopify Variant ID for live checkout permalinks
-  String get shopifyVariantId {
-    if (selectedVariant != null && RegExp(r'^\d+$').hasMatch(selectedVariant!.id)) {
-      return selectedVariant!.id;
-    }
-    for (var v in product.variants) {
-      if (RegExp(r'^\d+$').hasMatch(v.id)) {
-        return v.id;
-      }
-    }
-    if (RegExp(r'^\d+$').hasMatch(product.id)) {
-      return product.id;
-    }
-    return '49660817834199';
+  String get image => _variant?.image ?? product.mainImage;
+
+  String? get variantLabel {
+    final t = _variant?.title;
+    if (t == null || t == 'Default Title') return null;
+    return t;
   }
 
-  /// Unique key for cart item distinguishing variant choices
+  /// Real Shopify variant id, or null if this line cannot be checked out.
+  /// (Never falls back to a different product.)
+  String? get shopifyVariantId => _variant?.shopifyId;
+
+  bool get isPurchasable => shopifyVariantId != null && (_variant?.available ?? product.available);
+
+  /// Unique key distinguishing variant choices and customisations.
   String get cartKey {
-    final notePart = customNotes != null ? '_${customNotes.hashCode}' : '';
-    return '${product.id}_${selectedVariant?.id ?? "default"}$notePart';
+    final extra = attributes.isEmpty && customNotes == null
+        ? ''
+        : '_${Object.hashAll([customNotes, ...attributes.entries.map((e) => '${e.key}=${e.value}')])}';
+    return '${product.id}_${_variant?.id ?? "default"}$extra';
   }
 
   Map<String, dynamic> toJson() => {
@@ -49,17 +59,19 @@ class CartItem {
         'quantity': quantity,
         'customNotes': customNotes,
         'bundleItemSummaries': bundleItemSummaries,
+        'attributes': attributes,
       };
 
   factory CartItem.fromJson(Map<String, dynamic> json) {
     return CartItem(
-      product: ProductModel.fromJson(json['product']),
+      product: ProductModel.fromJson(Map<String, dynamic>.from(json['product'])),
       selectedVariant: json['selectedVariant'] != null
-          ? ProductVariant.fromJson(json['selectedVariant'])
+          ? ProductVariant.fromJson(Map<String, dynamic>.from(json['selectedVariant']))
           : null,
       quantity: json['quantity'] ?? 1,
       customNotes: json['customNotes'] as String?,
       bundleItemSummaries: (json['bundleItemSummaries'] as List?)?.map((e) => e.toString()).toList(),
+      attributes: (json['attributes'] as Map?)?.map((k, v) => MapEntry(k.toString(), v.toString())),
     );
   }
 }
