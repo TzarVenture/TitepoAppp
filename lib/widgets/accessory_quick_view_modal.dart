@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'web_safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/constants/app_colors.dart';
@@ -73,7 +73,7 @@ class AccessoryQuickViewModal extends StatelessWidget {
                   width: 100,
                   height: 100,
                   color: const Color(0xFFF7F2E7),
-                  child: CachedNetworkImage(
+                  child: WebSafeNetworkImage(
                     imageUrl: product.mainImage,
                     fit: BoxFit.cover,
                     errorWidget: (_, __, ___) => const Center(

@@ -70,11 +70,12 @@ class ProductModel {
     if (json['images'] is List) {
       for (final img in json['images']) {
         if (img is Map && img['src'] != null) {
-          final src = img['src'].toString();
+          var src = img['src'].toString();
+          if (src.startsWith('//')) src = 'https:$src';
           parsedImages.add(src);
           if (img['id'] != null) imageIdToSrc[img['id'].toString()] = src;
         } else if (img is String) {
-          parsedImages.add(img);
+          parsedImages.add(img.startsWith('//') ? 'https:$img' : img);
         }
       }
     }

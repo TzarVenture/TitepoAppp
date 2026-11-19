@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/product.dart';
 import '../models/collection.dart';
@@ -69,29 +70,78 @@ class ShopifyProvider with ChangeNotifier {
     return null;
   }
 
-  Future<void> loadCatalogData() async {
+  Future<void>? _catalogLoad;
+  Completer<void> _firstContent = Completer<void>();
+
+  /// Completes as soon as there is something to show on the home screen
+  /// (cached catalogue, first page of products, or the load has finished).
+  Future<void> get firstContentReady => _firstContent.future;
+
+  void _markFirstContent() {
+    if (!_firstContent.isCompleted) _firstContent.complete();
+  }
+
+  /// Loads the catalogue progressively: cached copy first, then home-page
+  /// collections and the full catalogue page by page, notifying as data arrives.
+  Future<void> loadCatalogData() {
+    return _catalogLoad ??= _doLoadCatalog().whenComplete(() => _catalogLoad = null);
+  }
+
+  Future<void> _doLoadCatalog() async {
+    if (_firstContent.isCompleted && _allProducts.isEmpty) _firstContent = Completer<void>();
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final results = await Future.wait([
-        _service.fetchProducts(),
-        _service.fetchCollections(),
-        _loadCollectionIntoCache('new-arrival-1'),
-        _loadCollectionIntoCache('new-arrival'),
-        _loadCollectionIntoCache('return-gift'),
+      // 1) Instant: products saved on the phone from the last successful load.
+      if (_allProducts.isEmpty) {
+        final cached = await _service.cachedProducts();
+        if (cached.isNotEmpty && _allProducts.isEmpty) {
+          _allProducts = cached;
+          if (_selectedCollectionHandle == 'all') _categoryProducts = _allProducts;
+          _markFirstContent();
+          notifyListeners();
+        }
+      }
+
+      // 2) Network: everything in parallel, UI updated as each part arrives.
+      await Future.wait([
+        _service.fetchCollections().then((c) {
+          _collections = c;
+          notifyListeners();
+        }),
+        for (final h in const ['new-arrival-1', 'new-arrival', 'return-gift'])
+          _loadCollectionIntoCache(h).then((list) {
+            if (list.isNotEmpty) notifyListeners();
+          }),
+        _service
+            .fetchProducts(onProgress: (partial) {
+              if (partial.length >= _allProducts.length) {
+                _allProducts = partial;
+                if (_selectedCollectionHandle == 'all') _categoryProducts = _allProducts;
+                _markFirstContent();
+                notifyListeners();
+              }
+            })
+            .then((all) {
+              if (all.isNotEmpty) {
+                _allProducts = all;
+                if (_selectedCollectionHandle == 'all') _categoryProducts = _allProducts;
+              }
+            }),
       ]);
-      _allProducts = results[0] as List<ProductModel>;
-      _collections = results[1] as List<CollectionModel>;
-      if (_selectedCollectionHandle == 'all') _categoryProducts = _allProducts;
+
       if (_allProducts.isEmpty) {
         _errorMessage = 'Couldn\'t load products. Check your connection and pull to refresh.';
       }
     } catch (_) {
-      _errorMessage = 'Couldn\'t load products. Check your connection and pull to refresh.';
+      if (_allProducts.isEmpty) {
+        _errorMessage = 'Couldn\'t load products. Check your connection and pull to refresh.';
+      }
     } finally {
       _isLoading = false;
+      _markFirstContent();
       notifyListeners();
     }
   }

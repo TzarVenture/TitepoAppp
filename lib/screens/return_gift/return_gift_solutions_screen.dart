@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import '../../widgets/web_safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -455,7 +455,7 @@ class _ReturnGiftSolutionsScreenState extends State<ReturnGiftSolutionsScreen> {
                       ),
                       child: _bundle.isCustomBag && _bundle.customImageBytes != null
                           ? Image.memory(_bundle.customImageBytes!, fit: BoxFit.contain)
-                          : CachedNetworkImage(
+                          : WebSafeNetworkImage(
                               imageUrl: _customBagProduct?.mainImage ??
                                   'https://cdn.shopify.com/s/files/1/0824/4792/5463/files/whitebag-removebg-preview.png?v=1786107156',
                               fit: BoxFit.contain,
@@ -617,7 +617,7 @@ class _ReturnGiftSolutionsScreenState extends State<ReturnGiftSolutionsScreen> {
                         borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
                         child: Container(
                           color: const Color(0xFFF9F6F0),
-                          child: CachedNetworkImage(
+                          child: WebSafeNetworkImage(
                             imageUrl: bag.mainImage,
                             fit: BoxFit.cover,
                             errorWidget: (_, __, ___) => const Center(
@@ -894,7 +894,7 @@ class _ReturnGiftSolutionsScreenState extends State<ReturnGiftSolutionsScreen> {
                               borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
                               child: Container(
                                 color: const Color(0xFFFAF7F2),
-                                child: CachedNetworkImage(
+                                child: WebSafeNetworkImage(
                                   imageUrl: item.mainImage,
                                   fit: BoxFit.cover,
                                   errorWidget: (_, __, ___) => const Center(
@@ -1119,7 +1119,7 @@ class _ReturnGiftSolutionsScreenState extends State<ReturnGiftSolutionsScreen> {
                       ),
                       child: _bundle.isCustomBag && _bundle.customImageBytes != null
                           ? Image.memory(_bundle.customImageBytes!, fit: BoxFit.contain)
-                          : CachedNetworkImage(
+                          : WebSafeNetworkImage(
                               imageUrl: _bundle.selectedBag?.mainImage ?? '',
                               fit: BoxFit.contain,
                               errorWidget: (_, __, ___) => const Icon(Icons.shopping_bag),
@@ -1219,7 +1219,7 @@ class _ReturnGiftSolutionsScreenState extends State<ReturnGiftSolutionsScreen> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(
+                            child: WebSafeNetworkImage(
                               imageUrl: product.mainImage,
                               width: 44,
                               height: 44,

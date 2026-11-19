@@ -1,6 +1,6 @@
+import 'web_safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/constants/app_colors.dart';
 import '../../providers/shopify_provider.dart';
 import '../../models/product.dart';
@@ -167,7 +167,7 @@ class VideoReelsPreviewSection extends StatelessWidget {
                         fit: StackFit.expand,
                         children: [
                           // 1. High-Resolution Real Product Thumbnail Background
-                          CachedNetworkImage(
+                          WebSafeNetworkImage(
                             imageUrl: thumbUrl,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(

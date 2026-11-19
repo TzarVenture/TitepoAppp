@@ -1,6 +1,6 @@
+import 'web_safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../core/constants/app_colors.dart';
 import '../models/product.dart';
@@ -147,7 +147,7 @@ class _VideoPreviewModalState extends State<VideoPreviewModal> {
                       fit: StackFit.expand,
                       children: [
                         if (widget.fallbackThumbnailUrl.isNotEmpty)
-                          CachedNetworkImage(
+                          WebSafeNetworkImage(
                             imageUrl: widget.fallbackThumbnailUrl,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(color: const Color(0xFF03251A)),
@@ -344,7 +344,7 @@ class _VideoPreviewModalState extends State<VideoPreviewModal> {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: CachedNetworkImage(
+                          child: WebSafeNetworkImage(
                             imageUrl: widget.relatedProduct!.mainImage,
                             width: 50,
                             height: 50,

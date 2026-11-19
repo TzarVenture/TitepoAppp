@@ -1,4 +1,4 @@
-import 'package:cached_network_image/cached_network_image.dart';
+import 'web_safe_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/constants/app_colors.dart';
@@ -40,7 +40,7 @@ class AppNetworkImage extends StatelessWidget {
     }
     return Container(
       color: background,
-      child: CachedNetworkImage(
+      child: WebSafeNetworkImage(
         imageUrl: sized(url, width),
         fit: fit,
         fadeInDuration: const Duration(milliseconds: 220),

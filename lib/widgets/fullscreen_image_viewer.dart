@@ -1,5 +1,5 @@
+import 'web_safe_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 class FullscreenImageViewer extends StatefulWidget {
   final List<String> images;
@@ -62,7 +62,7 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
                 child: Center(
                   child: Hero(
                     tag: 'product_image_$index',
-                    child: CachedNetworkImage(
+                    child: WebSafeNetworkImage(
                       imageUrl: url,
                       fit: BoxFit.contain,
                       placeholder: (_, __) => const Center(
@@ -170,7 +170,7 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(8),
-                              child: CachedNetworkImage(
+                              child: WebSafeNetworkImage(
                                 imageUrl: widget.images[idx],
                                 fit: BoxFit.cover,
                               ),

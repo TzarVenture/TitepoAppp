@@ -100,11 +100,18 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
     final wishlistProvider = Provider.of<WishlistProvider>(context, listen: false);
 
+    // Start loading the catalogue, but don't hold the splash for all of it:
+    // continue as soon as there is something to show (cached products or the
+    // first page), or after 4s at most. The home screen fills in the rest.
+    shopifyProvider.loadCatalogData();
     await Future.wait([
-      shopifyProvider.loadCatalogData(),
-      cartProvider.initCart(),
-      wishlistProvider.initWishlist(),
+      cartProvider.initCart().catchError((_) {}),
+      wishlistProvider.initWishlist().catchError((_) {}),
       Future.delayed(const Duration(milliseconds: 1200)),
+      Future.any([
+        shopifyProvider.firstContentReady,
+        Future.delayed(const Duration(seconds: 4)),
+      ]),
     ]);
 
     if (mounted) {
